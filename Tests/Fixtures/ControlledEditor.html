@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <title>HanYi Controlled Editor Probe</title>
+</head>
+<body>
+    <main>
+        <div
+            id="editor"
+            role="textbox"
+            aria-label="受控编辑器"
+            contenteditable="true"
+        ></div>
+        <button id="submit" type="button">提交</button>
+        <output id="submitted"></output>
+    </main>
+    <script>
+        let editor = document.querySelector("#editor");
+        const submitted = document.querySelector("#submitted");
+        let editorState = "";
+
+        function bindEditorInput() {
+            editor.addEventListener("input", () => {
+                editorState = editor.innerText;
+            });
+        }
+
+        bindEditorInput();
+        document.querySelector("#submit").addEventListener("click", () => {
+            submitted.textContent = editorState;
+        });
+
+        if (new URLSearchParams(location.search).get("rerender") === "1") {
+            setTimeout(() => {
+                const replacement = editor.cloneNode(false);
+                replacement.textContent = editor.innerText;
+                editor.replaceWith(replacement);
+                editor = replacement;
+                bindEditorInput();
+                editor.focus();
+            }, 1200);
+        }
+    </script>
+</body>
+</html>
