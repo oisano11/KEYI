@@ -10,6 +10,7 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("settings round trip", CheckSettingsRoundTrip),
     ("prompt payload escaping", CheckPromptPayload),
     ("successful API request", CheckSuccessfulRequest),
+    ("volcengine responses request", CheckVolcengineResponsesRequest),
     ("API error details", CheckApiError),
     ("HTTPS validation", CheckHttpsValidation),
     ("focused text fallback policy", CheckFocusedTextFallbackPolicy),
@@ -27,6 +28,12 @@ static Task CheckProviderDefaults()
     Assert(ProviderCatalog.All.Count == 4, "provider count");
     Assert(ProviderCatalog.Get(ProviderId.DeepSeek).DefaultModel == "deepseek-chat", "DeepSeek model");
     Assert(ProviderCatalog.Get(ProviderId.XAI).DefaultEndpoint == "https://api.x.ai/v1/chat/completions", "xAI endpoint");
+    Assert(
+        ProviderCatalog.Get(ProviderId.Volcengine).DefaultEndpoint == "https://ark.cn-beijing.volces.com/api/v3/responses",
+        "volcengine responses endpoint matches macOS");
+    Assert(
+        ProviderCatalog.Get(ProviderId.Volcengine).DefaultModel == "doubao-seed-translation-250915",
+        "volcengine translation model matches macOS");
     Assert(ProviderCatalog.All.All(provider => provider.DefaultEndpoint.StartsWith("https://", StringComparison.Ordinal)), "HTTPS defaults");
     return Task.CompletedTask;
 }
@@ -122,6 +129,40 @@ static async Task CheckSuccessfulRequest()
         payloadDocument.RootElement.GetProperty("source_text").GetString() == "你好",
         "source text body");
     Assert(!payloadDocument.RootElement.TryGetProperty("full_input_context", out _), "request must not include full input context");
+}
+
+static async Task CheckVolcengineResponsesRequest()
+{
+    string? capturedBody = null;
+    using var http = new HttpClient(new StubHandler(async request =>
+    {
+        capturedBody = await request.Content!.ReadAsStringAsync();
+        return JsonResponse(HttpStatusCode.OK,
+            "{\"output\":[{\"content\":[{\"type\":\"output_text\",\"text\":\"  こんにちは。  \"}]}]}");
+    }));
+    var client = new OpenAiTranslationClient(http);
+    var result = await client.TranslateAsync(
+        new TextTranslationRequest(
+            "你好",
+            null,
+            TranslationLanguage.Japanese,
+            TranslationScene.Automatic,
+            EnglishStyle.Automatic),
+        new ApiProviderConfiguration(
+            ProviderId.Volcengine,
+            "test-secret",
+            new Uri("https://ark.cn-beijing.volces.com/api/v3/responses"),
+            "doubao-seed-translation-250915"));
+
+    Assert(result == "こんにちは。", "responses result trimmed");
+    using var document = JsonDocument.Parse(capturedBody!);
+    Assert(!document.RootElement.TryGetProperty("messages", out _), "responses payload has no chat messages");
+    var content = document.RootElement.GetProperty("input")[0].GetProperty("content")[0];
+    Assert(content.GetProperty("type").GetString() == "input_text", "responses input_text");
+    Assert(content.GetProperty("text").GetString() == "你好", "responses source text");
+    var options = content.GetProperty("translation_options");
+    Assert(options.GetProperty("source_language").GetString() == "zh", "responses source language");
+    Assert(options.GetProperty("target_language").GetString() == "ja", "responses target language");
 }
 
 static async Task CheckApiError()

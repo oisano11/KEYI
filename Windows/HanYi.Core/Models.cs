@@ -34,8 +34,8 @@ public static class ProviderCatalog
         new(
             ProviderId.Volcengine,
             "火山引擎",
-            "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
-            "doubao-seed-1-6-250615"),
+            "https://ark.cn-beijing.volces.com/api/v3/responses",
+            "doubao-seed-translation-250915"),
         new(
             ProviderId.XAI,
             "xAI Grok",
