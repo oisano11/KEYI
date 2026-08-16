@@ -96,7 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func replaceHotKey(with configuration: HotKeyConfiguration) throws {
         let replacement = GlobalHotKey()
         try replacement.register(configuration: configuration) {
-            AppModel.shared.triggerTranslation()
+            Task { await AppModel.shared.triggerTranslation() }
         }
 
         let previous = hotKey

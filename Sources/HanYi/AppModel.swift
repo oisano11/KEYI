@@ -340,11 +340,11 @@ final class AppModel: ObservableObject {
     func triggerFromMenu() {
         Task {
             try? await Task.sleep(for: .milliseconds(180))
-            triggerTranslation()
+            await triggerTranslation()
         }
     }
 
-    func triggerTranslation() {
+    func triggerTranslation() async {
         // 云端中转站可能需要几十秒。处理中重复按快捷键时继续等待当前
         // 请求，避免用户因没有立即看到结果而反复按键、不断取消并重启。
         // 真正失效的请求仍由 URLSession 超时和系统唤醒恢复逻辑清理。
@@ -359,8 +359,11 @@ final class AppModel: ObservableObject {
         }
         logger.info("Translation requested; trusted=\(self.accessibility.isTrusted)")
 
+        // 捕获是异步等待目标应用响应的；置为 preparing 让 isBusy 在
+        // 等待期间挡住重复触发的快捷键，避免两次捕获交错操作剪贴板。
+        state = .preparing
         do {
-            let snapshot = try accessibility.capture()
+            let snapshot = try await accessibility.capture()
             logger.info("Focused text captured; utf16Length=\((snapshot.selection.text as NSString).length)")
             let id = UUID()
             pendingID = id
@@ -428,7 +431,7 @@ final class AppModel: ObservableObject {
                     )
                 )
                 try Task.checkCancellation()
-                completeTranslation(id: request.id, translatedText: translatedText)
+                await completeTranslation(id: request.id, translatedText: translatedText)
             } catch {
                 failTranslation(id: request.id, error: error)
             }
@@ -458,7 +461,7 @@ final class AppModel: ObservableObject {
                     )
                 )
                 try Task.checkCancellation()
-                completeTranslation(id: request.id, translatedText: translatedText)
+                await completeTranslation(id: request.id, translatedText: translatedText)
             } catch {
                 failTranslation(id: request.id, error: error)
             }
@@ -480,11 +483,11 @@ final class AppModel: ObservableObject {
         )
     }
 
-    func completeTranslation(id: UUID, translatedText: String) {
+    func completeTranslation(id: UUID, translatedText: String) async {
         guard pendingID == id, let snapshot = pendingSnapshot else { return }
         apiTranslationTask = nil
         do {
-            try accessibility.replace(snapshot: snapshot, with: translatedText)
+            try await accessibility.replace(snapshot: snapshot, with: translatedText)
             logger.info("Translated text committed")
             clearPending()
             state = .success

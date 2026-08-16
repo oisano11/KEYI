@@ -33,7 +33,7 @@ struct TranslationHostView: View {
                     try await session.value.prepareTranslation()
                     logger.info("Translating source text")
                     let response = try await session.value.translate(request.sourceText)
-                    model.completeTranslation(
+                    await model.completeTranslation(
                         id: request.id,
                         translatedText: response.targetText
                     )

@@ -81,14 +81,14 @@ final class AccessibilityTextClient {
         AXIsProcessTrustedWithOptions(options)
     }
 
-    func capture() throws -> Snapshot {
+    func capture() async throws -> Snapshot {
         guard isTrusted else { throw Error.permissionRequired }
 
         do {
-            return try captureFromAccessibility()
+            return try await captureFromAccessibility()
         } catch Error.noFocusedText, Error.unreadableText, Error.readOnlyText {
             do {
-                return try captureFromKeyboard()
+                return try await captureFromKeyboard()
             } catch Error.noFocusedText {
                 if requiresTerminalSelection() {
                     throw Error.terminalSelectionRequired
@@ -98,8 +98,8 @@ final class AccessibilityTextClient {
         }
     }
 
-    private func captureFromAccessibility() throws -> Snapshot {
-        let element = try focusedElement()
+    private func captureFromAccessibility() async throws -> Snapshot {
+        let element = try await focusedElement()
 
         guard let value = try copyAttribute(kAXValueAttribute, from: element) as? String else {
             throw Error.unreadableText
@@ -157,7 +157,7 @@ final class AccessibilityTextClient {
         )
     }
 
-    private func captureFromKeyboard() throws -> Snapshot {
+    private func captureFromKeyboard() async throws -> Snapshot {
         guard let application = frontmostTargetApplication() else {
             throw Error.noFocusedText
         }
@@ -171,7 +171,7 @@ final class AccessibilityTextClient {
             }
         }
 
-        let selectedText = copyFocusedText(using: pasteboard)
+        let selectedText = await copyFocusedText(using: pasteboard)
         temporaryChangeCount = pasteboard.changeCount
         let text: String
         if let selectedText {
@@ -183,8 +183,8 @@ final class AccessibilityTextClient {
             guard postKeyCombo(virtualKey: CGKeyCode(kVK_ANSI_A)) else {
                 throw Error.noFocusedText
             }
-            Thread.sleep(forTimeInterval: 0.08)
-            guard let wholeText = copyFocusedText(using: pasteboard) else {
+            await pause(80)
+            guard let wholeText = await copyFocusedText(using: pasteboard) else {
                 throw Error.noFocusedText
             }
             temporaryChangeCount = pasteboard.changeCount
@@ -203,24 +203,30 @@ final class AccessibilityTextClient {
         )
     }
 
-    func replace(snapshot: Snapshot, with translatedText: String) throws {
+    func replace(snapshot: Snapshot, with translatedText: String) async throws {
         guard isTrusted else { throw Error.permissionRequired }
 
         if case .keyboardPaste = snapshot.writeMode {
-            try replaceUsingKeyboardPaste(snapshot: snapshot, translatedText: translatedText)
+            try await replaceUsingKeyboardPaste(
+                snapshot: snapshot,
+                translatedText: translatedText
+            )
             return
         }
         if case .terminalPaste = snapshot.writeMode {
-            try replaceTerminalCommand(snapshot: snapshot, translatedText: translatedText)
+            try await replaceTerminalCommand(
+                snapshot: snapshot,
+                translatedText: translatedText
+            )
             return
         }
 
         let currentElement: AXUIElement
         do {
-            currentElement = try focusedElement()
+            currentElement = try await focusedElement()
         } catch Error.noFocusedText {
             if case .browserPaste = snapshot.writeMode {
-                try replaceUsingKeyboardPaste(
+                try await replaceUsingKeyboardPaste(
                     snapshot: snapshot,
                     translatedText: translatedText
                 )
@@ -231,7 +237,7 @@ final class AccessibilityTextClient {
         guard let snapshotElement = snapshot.element,
               CFEqual(currentElement, snapshotElement) else {
             if case .browserPaste = snapshot.writeMode {
-                try replaceUsingKeyboardPaste(
+                try await replaceUsingKeyboardPaste(
                     snapshot: snapshot,
                     translatedText: translatedText
                 )
@@ -247,7 +253,7 @@ final class AccessibilityTextClient {
         guard currentValue == snapshot.originalValue,
               currentRange == snapshot.originalSelectedRange else {
             if case .browserPaste = snapshot.writeMode {
-                try replaceUsingKeyboardPaste(
+                try await replaceUsingKeyboardPaste(
                     snapshot: snapshot,
                     translatedText: translatedText
                 )
@@ -278,7 +284,7 @@ final class AccessibilityTextClient {
                 translatedText as CFString
             )
         case .browserPaste:
-            try replaceUsingPaste(
+            try await replaceUsingPaste(
                 on: currentElement,
                 range: snapshot.selection.range,
                 translatedText: translatedText,
@@ -299,7 +305,7 @@ final class AccessibilityTextClient {
         )
     }
 
-    private func focusedElement() throws -> AXUIElement {
+    private func focusedElement() async throws -> AXUIElement {
         let systemWide = AXUIElementCreateSystemWide()
         for attempt in 0..<4 {
             if let element = focusedElement(from: systemWide) {
@@ -324,7 +330,7 @@ final class AccessibilityTextClient {
             }
 
             if attempt < 3 {
-                Thread.sleep(forTimeInterval: 0.04)
+                await pause(40)
             }
         }
 
@@ -356,12 +362,12 @@ final class AccessibilityTextClient {
             || bundleIdentifier.hasPrefix("com.microsoft.edgemac")
     }
 
-    private func copyFocusedText(using pasteboard: NSPasteboard) -> String? {
+    private func copyFocusedText(using pasteboard: NSPasteboard) async -> String? {
         let previousChangeCount = pasteboard.changeCount
         guard postKeyCombo(virtualKey: CGKeyCode(kVK_ANSI_C)) else {
             return nil
         }
-        Thread.sleep(forTimeInterval: 0.08)
+        await pause(80)
         guard pasteboard.changeCount != previousChangeCount else {
             return nil
         }
@@ -372,7 +378,7 @@ final class AccessibilityTextClient {
     private func replaceUsingKeyboardPaste(
         snapshot: Snapshot,
         translatedText: String
-    ) throws {
+    ) async throws {
         guard let expectedProcessIdentifier = snapshot.applicationProcessIdentifier,
               frontmostTargetApplication()?.processIdentifier == expectedProcessIdentifier else {
             throw Error.contentChanged
@@ -387,7 +393,7 @@ final class AccessibilityTextClient {
             }
         }
 
-        let selectionMatches = restoreExpectedKeyboardSelection(
+        let selectionMatches = await restoreExpectedKeyboardSelection(
             snapshot: snapshot,
             using: pasteboard
         )
@@ -408,28 +414,28 @@ final class AccessibilityTextClient {
         guard postPasteShortcut() else {
             throw Error.browserInputFailed
         }
-        Thread.sleep(forTimeInterval: 0.12)
+        await pause(120)
     }
 
     private func restoreExpectedKeyboardSelection(
         snapshot: Snapshot,
         using pasteboard: NSPasteboard
-    ) -> Bool {
-        if copyFocusedText(using: pasteboard) == snapshot.selection.text {
+    ) async -> Bool {
+        if await copyFocusedText(using: pasteboard) == snapshot.selection.text {
             return true
         }
 
         // X 等受控编辑器重渲染后，原 AX 元素身份会变化。只要新版元素
         // 仍暴露相同全文，就在新版元素上恢复原选区，再走真实粘贴事件。
-        if let element = try? focusedElement(),
+        if let element = try? await focusedElement(),
            let currentValue = try? copyAttribute(
                kAXValueAttribute,
                from: element
            ) as? String,
            currentValue == snapshot.originalValue,
            setSelectionRange(snapshot.selection.range, on: element) == .success {
-            Thread.sleep(forTimeInterval: 0.04)
-            if copyFocusedText(using: pasteboard) == snapshot.selection.text {
+            await pause(40)
+            if await copyFocusedText(using: pasteboard) == snapshot.selection.text {
                 return true
             }
         }
@@ -442,21 +448,21 @@ final class AccessibilityTextClient {
               postKeyCombo(virtualKey: CGKeyCode(kVK_ANSI_A)) else {
             return false
         }
-        Thread.sleep(forTimeInterval: 0.08)
-        return copyFocusedText(using: pasteboard) == snapshot.originalValue
+        await pause(80)
+        return await copyFocusedText(using: pasteboard) == snapshot.originalValue
     }
 
     private func replaceTerminalCommand(
         snapshot: Snapshot,
         translatedText: String
-    ) throws {
+    ) async throws {
         guard TerminalCommandSelection.isSafeReplacement(translatedText) else {
             throw Error.unsafeTerminalTranslation
         }
         guard let expectedProcessIdentifier = snapshot.applicationProcessIdentifier,
               frontmostTargetApplication()?.processIdentifier == expectedProcessIdentifier,
               let snapshotElement = snapshot.element,
-              let currentElement = try? focusedElement(),
+              let currentElement = try? await focusedElement(),
               CFEqual(currentElement, snapshotElement),
               let currentValue = try? copyAttribute(
                   kAXValueAttribute,
@@ -496,7 +502,7 @@ final class AccessibilityTextClient {
             location: snapshot.selection.range.location,
             length: 0
         )
-        guard waitForTerminalState(
+        guard await waitForTerminalState(
             snapshotElement: snapshotElement,
             expectedProcessIdentifier: expectedProcessIdentifier,
             expectedRange: clearedRange,
@@ -523,7 +529,7 @@ final class AccessibilityTextClient {
         temporaryChangeCount = pasteboard.changeCount
 
         guard frontmostTargetApplication()?.processIdentifier == expectedProcessIdentifier,
-              let focusedBeforePaste = try? focusedElement(),
+              let focusedBeforePaste = try? await focusedElement(),
               CFEqual(focusedBeforePaste, snapshotElement),
               let rangeBeforePaste = try? selectionRange(from: focusedBeforePaste),
               rangeBeforePaste == clearedRange else {
@@ -537,7 +543,7 @@ final class AccessibilityTextClient {
             location: clearedRange.location + (replacementText as NSString).length,
             length: 0
         )
-        guard waitForTerminalState(
+        guard await waitForTerminalState(
             snapshotElement: snapshotElement,
             expectedProcessIdentifier: expectedProcessIdentifier,
             expectedRange: finalRange,
@@ -554,13 +560,13 @@ final class AccessibilityTextClient {
         expectedRange: NSRange,
         expectedText: String?,
         expectedTextLocation: Int?
-    ) -> Bool {
+    ) async -> Bool {
         let deadline = Date().addingTimeInterval(0.8)
         repeat {
-            Thread.sleep(forTimeInterval: 0.04)
+            await pause(40)
             guard frontmostTargetApplication()?.processIdentifier
                     == expectedProcessIdentifier,
-                  let currentElement = try? focusedElement(),
+                  let currentElement = try? await focusedElement(),
                   CFEqual(currentElement, snapshotElement),
                   let currentRange = try? selectionRange(from: currentElement),
                   currentRange == expectedRange else {
@@ -776,7 +782,7 @@ final class AccessibilityTextClient {
         translatedText: String,
         originalValue: String,
         expectedValue: String
-    ) throws {
+    ) async throws {
         let selectionResult = setSelectionRange(range, on: element)
         guard selectionResult == .success else {
             throw Error.writeFailed(selectionResult)
@@ -802,7 +808,7 @@ final class AccessibilityTextClient {
 
         let deadline = Date().addingTimeInterval(0.8)
         repeat {
-            Thread.sleep(forTimeInterval: 0.04)
+            await pause(40)
             if let value = try? copyAttribute(
                 kAXValueAttribute,
                 from: element
@@ -833,6 +839,12 @@ final class AccessibilityTextClient {
 
     private func postPasteShortcut() -> Bool {
         postKeyCombo(virtualKey: CGKeyCode(kVK_ANSI_V))
+    }
+
+    private func pause(_ milliseconds: Int) async {
+        // 与 Thread.sleep 同长的等待，但只挂起任务、让出主线程；
+        // 吞掉取消信号以保持与旧行为一致的轮询节奏。
+        try? await Task.sleep(for: .milliseconds(milliseconds))
     }
 
     private func postBackspaces(count: Int) -> Bool {
