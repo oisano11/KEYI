@@ -258,7 +258,7 @@ public struct TextTranslationRequest: Sendable {
     public let sourceText: String
     public let contextText: String?
     public let sourceLanguage: String
-    public let targetLanguage: String
+    public let targetLanguage: TranslationLanguage
     public let scene: TranslationScene
     public let englishStyle: EnglishStyle
 
@@ -266,7 +266,7 @@ public struct TextTranslationRequest: Sendable {
         sourceText: String,
         contextText: String? = nil,
         sourceLanguage: String = "zh-Hans",
-        targetLanguage: String = "en",
+        targetLanguage: TranslationLanguage = .english,
         scene: TranslationScene = .automatic,
         englishStyle: EnglishStyle = .automatic
     ) {

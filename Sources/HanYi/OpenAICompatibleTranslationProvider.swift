@@ -32,7 +32,7 @@ struct OpenAICompatibleTranslationProvider: TranslationProvider {
                 model: model,
                 text: request.sourceText,
                 sourceLanguage: request.sourceLanguage,
-                targetLanguage: request.targetLanguage
+                targetLanguage: request.targetLanguage.rawValue
             )
         } else {
             urlRequest.httpBody = try JSONEncoder().encode(

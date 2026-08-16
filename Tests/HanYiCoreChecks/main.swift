@@ -285,7 +285,7 @@ expect(streetAAVEPrompt.contains("do not fall back to neutral American English")
 
 let japaneseRequest = TextTranslationRequest(
     sourceText: "你好",
-    targetLanguage: TranslationLanguage.japanese.rawValue,
+    targetLanguage: .japanese,
     scene: .dailyChat,
     englishStyle: .blackAmerican
 )

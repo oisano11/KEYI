@@ -115,8 +115,10 @@ final class AppModel: ObservableObject {
 
     var supportsEnglishStyleCustomization: Bool {
         supportsTranslationCustomization
-            && selectedTargetLanguage == .english
-            && selectedScene != .business
+            && TranslationPromptBuilder.usesEnglishStyle(
+                language: selectedTargetLanguage,
+                scene: selectedScene
+            )
     }
 
     func selectTargetLanguage(_ language: TranslationLanguage) {
@@ -196,10 +198,6 @@ final class AppModel: ObservableObject {
             return false
         }
 
-        let alert = NSAlert()
-        alert.messageText = "配置 \(providerID.displayName) API"
-        alert.informativeText = "API Key 仅保存到当前 macOS 用户的钥匙串；Endpoint 和模型名保存到本机设置。"
-
         let apiKeyField = NSSecureTextField()
         apiKeyField.placeholderString = isAPIConfigured(providerID)
             ? "已保存，留空保持不变"
@@ -212,35 +210,16 @@ final class AppModel: ObservableObject {
         modelField.stringValue = settings.model(for: providerID)
             ?? profile.defaultModel
 
-        let grid = NSGridView(views: [
-            [NSTextField(labelWithString: "API Key"), apiKeyField],
-            [NSTextField(labelWithString: "Endpoint"), endpointField],
-            [NSTextField(labelWithString: "模型"), modelField]
-        ])
-        grid.rowSpacing = 8
-        grid.columnSpacing = 10
-        grid.column(at: 0).xPlacement = .trailing
-        grid.column(at: 0).width = 76
-        grid.column(at: 1).width = 374
-        for rowIndex in 0..<3 {
-            grid.row(at: rowIndex).height = 24
-        }
-
-        // macOS 26 的 NSAlert 不再可靠地采用 NSGridView 的内在尺寸；
-        // 直接作为 accessoryView 会把整张表压成几个小白条。使用明确尺寸
-        // 的容器承载表单，确保标签和三个输入框始终可见、可点击。
-        let formContainer = NSView(
-            frame: NSRect(x: 0, y: 0, width: 460, height: 88)
-        )
-        grid.frame = formContainer.bounds
-        grid.autoresizingMask = [.width, .height]
-        formContainer.addSubview(grid)
-        alert.accessoryView = formContainer
-        alert.addButton(withTitle: "保存")
-        alert.addButton(withTitle: "取消")
-        alert.window.initialFirstResponder = apiKeyField
-
-        guard alert.runModal() == .alertFirstButtonReturn else { return false }
+        guard presentConfigurationForm(
+            title: "配置 \(providerID.displayName) API",
+            informativeText: "API Key 仅保存到当前 macOS 用户的钥匙串；Endpoint 和模型名保存到本机设置。",
+            fields: [
+                ("API Key", apiKeyField),
+                ("Endpoint", endpointField),
+                ("模型", modelField)
+            ],
+            initialFocus: apiKeyField
+        ) else { return false }
 
         do {
             try settings.saveAPIConfiguration(
@@ -262,36 +241,19 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     func configureLocalModel() -> Bool {
-        let alert = NSAlert()
-        alert.messageText = "配置本地 Gemma 4"
-        alert.informativeText = "无需 API Key。首次翻译会自动加载 12B 模型；闲置 3 分钟后自动卸载并释放内存。"
-
         let endpointField = NSTextField(string: localModelEndpoint)
         let modelField = NSTextField(string: localModelName)
-        let grid = NSGridView(views: [
-            [NSTextField(labelWithString: "Endpoint"), endpointField],
-            [NSTextField(labelWithString: "模型"), modelField]
-        ])
-        grid.rowSpacing = 8
-        grid.columnSpacing = 10
-        grid.column(at: 0).xPlacement = .trailing
-        grid.column(at: 0).width = 76
-        grid.column(at: 1).width = 374
-        for rowIndex in 0..<2 {
-            grid.row(at: rowIndex).height = 24
-        }
-        let formContainer = NSView(
-            frame: NSRect(x: 0, y: 0, width: 460, height: 56)
-        )
-        grid.frame = formContainer.bounds
-        grid.autoresizingMask = [.width, .height]
-        formContainer.addSubview(grid)
-        alert.accessoryView = formContainer
-        alert.addButton(withTitle: "保存")
-        alert.addButton(withTitle: "取消")
-        alert.window.initialFirstResponder = endpointField
 
-        guard alert.runModal() == .alertFirstButtonReturn else { return false }
+        guard presentConfigurationForm(
+            title: "配置本地 Gemma 4",
+            informativeText: "无需 API Key。首次翻译会自动加载 12B 模型；闲置 3 分钟后自动卸载并释放内存。",
+            fields: [
+                ("Endpoint", endpointField),
+                ("模型", modelField)
+            ],
+            initialFocus: endpointField
+        ) else { return false }
+
         do {
             try settings.saveLocalModelConfiguration(
                 endpoint: endpointField.stringValue.trimmingCharacters(
@@ -307,6 +269,50 @@ final class AppModel: ObservableObject {
             showError("保存本地 Gemma 4 配置失败：\(error.localizedDescription)")
             return false
         }
+    }
+
+    /// 弹出带表单的配置窗口；返回用户是否点击"保存"。
+    /// macOS 26 的 NSAlert 不再可靠地采用 NSGridView 的内在尺寸，
+    /// 直接作为 accessoryView 会把整张表压成几个小白条，因此用明确
+    /// 尺寸的容器承载表单，保证标签和输入框始终可见、可点击。
+    private func presentConfigurationForm(
+        title: String,
+        informativeText: String,
+        fields: [(label: String, view: NSView)],
+        initialFocus: NSView
+    ) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = informativeText
+
+        let grid = NSGridView(
+            views: fields.map { [NSTextField(labelWithString: $0.label), $0.view] }
+        )
+        grid.rowSpacing = 8
+        grid.columnSpacing = 10
+        grid.column(at: 0).xPlacement = .trailing
+        grid.column(at: 0).width = 76
+        grid.column(at: 1).width = 374
+        for rowIndex in 0..<fields.count {
+            grid.row(at: rowIndex).height = 24
+        }
+
+        let formContainer = NSView(
+            frame: NSRect(
+                x: 0,
+                y: 0,
+                width: 460,
+                height: 24 * fields.count + 8 * max(fields.count - 1, 0)
+            )
+        )
+        grid.frame = formContainer.bounds
+        grid.autoresizingMask = [.width, .height]
+        formContainer.addSubview(grid)
+        alert.accessoryView = formContainer
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "取消")
+        alert.window.initialFirstResponder = initialFocus
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     var isBusy: Bool {
@@ -425,7 +431,7 @@ final class AppModel: ObservableObject {
                     TextTranslationRequest(
                         sourceText: request.sourceText,
                         contextText: request.contextText,
-                        targetLanguage: request.targetLanguage.rawValue,
+                        targetLanguage: request.targetLanguage,
                         scene: request.scene,
                         englishStyle: request.englishStyle
                     )
@@ -455,7 +461,7 @@ final class AppModel: ObservableObject {
                     TextTranslationRequest(
                         sourceText: request.sourceText,
                         contextText: request.contextText,
-                        targetLanguage: request.targetLanguage.rawValue,
+                        targetLanguage: request.targetLanguage,
                         scene: request.scene,
                         englishStyle: request.englishStyle
                     )

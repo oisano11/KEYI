@@ -391,8 +391,9 @@ internal sealed class AppController : IDisposable
         _targetLanguageMenu.Enabled = !_busy;
         _sceneMenu.Text = $"翻译场景：{_settings.Scene.DisplayName()}";
         _styleMenu.Text = $"英语风格：{_settings.EnglishStyle.DisplayName()}";
-        var styleEnabled = _settings.TargetLanguage == TranslationLanguage.English
-            && _settings.Scene != TranslationScene.Business;
+        var styleEnabled = TranslationPromptBuilder.UsesEnglishStyle(
+            _settings.TargetLanguage,
+            _settings.Scene);
         _styleMenu.Enabled = styleEnabled;
         _styleScopeHint.Visible = !styleEnabled;
         _styleScopeHint.Text = _settings.Scene == TranslationScene.Business

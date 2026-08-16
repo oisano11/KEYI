@@ -105,7 +105,13 @@ public static class TranslationPromptBuilder
         _ => throw new ArgumentOutOfRangeException(nameof(style))
     };
 
+    /// <summary>英语风格启用条件的唯一事实来源；菜单可用性与提示词共用。</summary>
+    public static bool UsesEnglishStyle(
+        TranslationLanguage language,
+        TranslationScene scene) =>
+        language == TranslationLanguage.English
+        && scene != TranslationScene.Business;
+
     private static bool UsesEnglishStyle(TextTranslationRequest request) =>
-        request.TargetLanguage == TranslationLanguage.English
-        && request.Scene != TranslationScene.Business;
+        UsesEnglishStyle(request.TargetLanguage, request.Scene);
 }

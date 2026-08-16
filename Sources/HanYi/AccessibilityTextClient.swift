@@ -163,16 +163,11 @@ final class AccessibilityTextClient {
         }
 
         let pasteboard = NSPasteboard.general
-        let clipboardSnapshot = PasteboardSnapshot(pasteboard: pasteboard)
-        var temporaryChangeCount = pasteboard.changeCount
-        defer {
-            if pasteboard.changeCount == temporaryChangeCount {
-                clipboardSnapshot.restore(to: pasteboard)
-            }
-        }
+        let pasteboardScope = ScopedPasteboard(pasteboard: pasteboard)
+        defer { pasteboardScope.restoreIfUnchanged() }
 
         let selectedText = await copyFocusedText(using: pasteboard)
-        temporaryChangeCount = pasteboard.changeCount
+        pasteboardScope.trackLatestChange()
         let text: String
         if let selectedText {
             text = selectedText
@@ -187,7 +182,7 @@ final class AccessibilityTextClient {
             guard let wholeText = await copyFocusedText(using: pasteboard) else {
                 throw Error.noFocusedText
             }
-            temporaryChangeCount = pasteboard.changeCount
+            pasteboardScope.trackLatestChange()
             text = wholeText
         }
 
@@ -356,10 +351,7 @@ final class AccessibilityTextClient {
         guard let bundleIdentifier = application.bundleIdentifier else {
             return false
         }
-        return Self.webEditorBundleIdentifiers.contains(bundleIdentifier)
-            || Self.browserBundleIdentifiers.contains(bundleIdentifier)
-            || bundleIdentifier.hasPrefix("com.google.Chrome")
-            || bundleIdentifier.hasPrefix("com.microsoft.edgemac")
+        return Self.isWebTextInput(bundleIdentifier)
     }
 
     private func copyFocusedText(using pasteboard: NSPasteboard) async -> String? {
@@ -385,19 +377,14 @@ final class AccessibilityTextClient {
         }
 
         let pasteboard = NSPasteboard.general
-        let clipboardSnapshot = PasteboardSnapshot(pasteboard: pasteboard)
-        var temporaryChangeCount = pasteboard.changeCount
-        defer {
-            if pasteboard.changeCount == temporaryChangeCount {
-                clipboardSnapshot.restore(to: pasteboard)
-            }
-        }
+        let pasteboardScope = ScopedPasteboard(pasteboard: pasteboard)
+        defer { pasteboardScope.restoreIfUnchanged() }
 
         let selectionMatches = await restoreExpectedKeyboardSelection(
             snapshot: snapshot,
             using: pasteboard
         )
-        temporaryChangeCount = pasteboard.changeCount
+        pasteboardScope.trackLatestChange()
         guard selectionMatches else {
             throw Error.contentChanged
         }
@@ -406,7 +393,7 @@ final class AccessibilityTextClient {
         guard pasteboard.setString(translatedText, forType: .string) else {
             throw Error.browserInputFailed
         }
-        temporaryChangeCount = pasteboard.changeCount
+        pasteboardScope.trackLatestChange()
         guard frontmostTargetApplication()?.processIdentifier
                 == expectedProcessIdentifier else {
             throw Error.contentChanged
@@ -513,20 +500,15 @@ final class AccessibilityTextClient {
         }
 
         let pasteboard = NSPasteboard.general
-        let clipboardSnapshot = PasteboardSnapshot(pasteboard: pasteboard)
-        var temporaryChangeCount = pasteboard.changeCount
-        defer {
-            if pasteboard.changeCount == temporaryChangeCount {
-                clipboardSnapshot.restore(to: pasteboard)
-            }
-        }
+        let pasteboardScope = ScopedPasteboard(pasteboard: pasteboard)
+        defer { pasteboardScope.restoreIfUnchanged() }
 
         let replacementText = translatedText + trailingText
         pasteboard.clearContents()
         guard pasteboard.setString(replacementText, forType: .string) else {
             throw Error.terminalWriteFailed
         }
-        temporaryChangeCount = pasteboard.changeCount
+        pasteboardScope.trackLatestChange()
 
         guard frontmostTargetApplication()?.processIdentifier == expectedProcessIdentifier,
               let focusedBeforePaste = try? await focusedElement(),
@@ -622,9 +604,6 @@ final class AccessibilityTextClient {
             &value
         )
         guard result == .success else {
-            if attribute == kAXFocusedUIElementAttribute as String {
-                throw Error.noFocusedText
-            }
             throw Error.unreadableText
         }
         return value
@@ -680,10 +659,7 @@ final class AccessibilityTextClient {
             return false
         }
 
-        return Self.webEditorBundleIdentifiers.contains(bundleIdentifier)
-            || Self.browserBundleIdentifiers.contains(bundleIdentifier)
-            || bundleIdentifier.hasPrefix("com.google.Chrome")
-            || bundleIdentifier.hasPrefix("com.microsoft.edgemac")
+        return Self.isWebTextInput(bundleIdentifier)
     }
 
     private func supportsTerminalCurrentLineCapture(
@@ -789,18 +765,13 @@ final class AccessibilityTextClient {
         }
 
         let pasteboard = NSPasteboard.general
-        let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
+        let pasteboardScope = ScopedPasteboard(pasteboard: pasteboard)
         pasteboard.clearContents()
         guard pasteboard.setString(translatedText, forType: .string) else {
             throw Error.browserInputFailed
         }
-        let temporaryChangeCount = pasteboard.changeCount
-
-        defer {
-            if pasteboard.changeCount == temporaryChangeCount {
-                snapshot.restore(to: pasteboard)
-            }
-        }
+        pasteboardScope.trackLatestChange()
+        defer { pasteboardScope.restoreIfUnchanged() }
 
         guard postPasteShortcut() else {
             throw Error.browserInputFailed
@@ -913,6 +884,15 @@ final class AccessibilityTextClient {
         "org.mozilla.firefox"
     ]
 
+    /// 网页编辑器与浏览器一律视为"网页输入"：键盘兜底全选和真实粘贴回写
+    /// 共用同一份判定，避免两处名单漂移。
+    private static func isWebTextInput(_ bundleIdentifier: String) -> Bool {
+        webEditorBundleIdentifiers.contains(bundleIdentifier)
+            || browserBundleIdentifiers.contains(bundleIdentifier)
+            || bundleIdentifier.hasPrefix("com.google.Chrome")
+            || bundleIdentifier.hasPrefix("com.microsoft.edgemac")
+    }
+
     private static let webEditorBundleIdentifiers: Set<String> = [
         "com.openai.codex",
         "com.anthropic.claudefordesktop",
@@ -953,5 +933,31 @@ private struct PasteboardSnapshot {
             return item
         }
         pasteboard.writeObjects(restoredItems)
+    }
+}
+
+/// 借用系统剪贴板的统一出口：进入作用域时快照原内容，退出时若期间
+/// 剪贴板没有出现我们之外的新变化就恢复快照，尽量不污染用户剪贴板。
+private final class ScopedPasteboard {
+    private let pasteboard: NSPasteboard
+    private let snapshot: PasteboardSnapshot
+    private var trackedChangeCount: Int
+
+    init(pasteboard: NSPasteboard) {
+        self.pasteboard = pasteboard
+        snapshot = PasteboardSnapshot(pasteboard: pasteboard)
+        trackedChangeCount = pasteboard.changeCount
+    }
+
+    /// 在每次由当前流程完成的读取或写入之后调用，把基准推进到最新变化。
+    func trackLatestChange() {
+        trackedChangeCount = pasteboard.changeCount
+    }
+
+    /// 在 defer 中调用：没有新变化才恢复，避免覆盖目标应用已读取的新内容。
+    func restoreIfUnchanged() {
+        if pasteboard.changeCount == trackedChangeCount {
+            snapshot.restore(to: pasteboard)
+        }
     }
 }

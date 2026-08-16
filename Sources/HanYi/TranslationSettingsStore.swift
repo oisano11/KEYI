@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import HanYiCore
 
 struct APIProviderConfiguration: Sendable {
@@ -221,9 +222,17 @@ final class TranslationSettingsStore {
     }
 
     private func persistPreferences() {
-        guard let data = try? JSONEncoder().encode(preferences) else { return }
+        guard let data = try? JSONEncoder().encode(preferences) else {
+            Self.logger.error("翻译偏好编码失败，本次更改未写入磁盘")
+            return
+        }
         defaults.set(data, forKey: preferencesKey)
     }
+
+    private static let logger = Logger(
+        subsystem: "com.hanyi.input-translator",
+        category: "Settings"
+    )
 
     private func apiKeyAccount(
         for providerID: TranslationProviderID

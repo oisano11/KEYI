@@ -53,6 +53,7 @@ enum LocalModelRuntime {
             resolvingAgainstBaseURL: false
         )
         let port = components?.port ?? 1234
+        // server start 在服务已运行时可能非零退出，失败不致命，继续尝试加载。
         _ = try? await run(
             executable: executable,
             arguments: [
@@ -62,7 +63,8 @@ enum LocalModelRuntime {
             ]
         )
 
-        _ = try? await run(
+        // load 失败意味着模型无法进入服务，轮询 90 秒也不会成功，立即报错。
+        try await run(
             executable: executable,
             arguments: [
                 "load",
@@ -162,11 +164,13 @@ enum LocalModelRuntime {
             process.standardOutput = outputPipe
             process.standardError = FileHandle.nullDevice
             try process.run()
+            // 必须先读完管道再等待退出：子进程输出超过管道缓冲时会阻塞在
+            // 写入上，先 waitUntilExit 会造成双向死锁。EOF 即子进程已退出。
+            let output = outputPipe.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
             guard process.terminationStatus == 0 else {
                 throw LocalModelRuntimeError.serviceUnavailable
             }
-            let output = outputPipe.fileHandleForReading.readDataToEndOfFile()
             return String(data: output, encoding: .utf8) ?? ""
         }.value
     }
