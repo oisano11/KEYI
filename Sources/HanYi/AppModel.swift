@@ -198,7 +198,7 @@ final class AppModel: ObservableObject {
 
         let alert = NSAlert()
         alert.messageText = "配置 \(providerID.displayName) API"
-        alert.informativeText = "API Key 仅保存到当前 macOS 用户的 KEYI 可译私有目录；Endpoint 和模型名保存到本机设置。"
+        alert.informativeText = "API Key 仅保存到当前 macOS 用户的钥匙串；Endpoint 和模型名保存到本机设置。"
 
         let apiKeyField = NSSecureTextField()
         apiKeyField.placeholderString = isAPIConfigured(providerID)
