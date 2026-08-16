@@ -326,4 +326,170 @@ let japaneseContent = (japaneseInput["content"] as! [[String: Any]])[0]
 let japaneseOptions = japaneseContent["translation_options"] as! [String: String]
 expect(japaneseOptions["target_language"] == "ja", "火山请求应透传非英语目标语言")
 
+// MARK: - OpenAI 兼容提供方 HTTP 语义（URLProtocol 桩）
+
+private let stubSession: URLSession = {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [StubURLProtocol.self]
+    return URLSession(configuration: configuration)
+}()
+
+// 检查程序串行执行，桩的状态只在"设置响应 → 发起请求 → 读取记录"之间
+// 流转，不存在并发访问；nonisolated(unsafe) 仅用于满足 Swift 6 检查。
+private final class StubURLProtocol: URLProtocol {
+    nonisolated(unsafe) static var respond: ((URLRequest) -> (Int, String))?
+    nonisolated(unsafe) private(set) static var lastRequest: URLRequest?
+    nonisolated(unsafe) private(set) static var lastBody: Data?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let respond = Self.respond else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL))
+            return
+        }
+        Self.lastRequest = request
+        Self.lastBody = Self.readBody(of: request)
+        let (status, payload) = respond(request)
+        let response = HTTPURLResponse(
+            url: request.url ?? URL(string: "https://stub.test")!,
+            statusCode: status,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(payload.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+
+    // URLSession 会把 httpBody 挪进 httpBodyStream，需要从流里读回。
+    private static func readBody(of request: URLRequest) -> Data {
+        if let body = request.httpBody { return body }
+        guard let stream = request.httpBodyStream else { return Data() }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let capacity = 4096
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: capacity)
+        defer { buffer.deallocate() }
+        while stream.hasBytesAvailable {
+            let read = stream.read(buffer, maxLength: capacity)
+            if read <= 0 { break }
+            data.append(buffer, count: read)
+        }
+        return data
+    }
+}
+
+private func stubBodyJSON() -> [String: Any] {
+    try! JSONSerialization.jsonObject(with: StubURLProtocol.lastBody ?? Data()) as! [String: Any]
+}
+
+StubURLProtocol.respond = { _ in
+    (200, "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"  Hello.  \"}}]}")
+}
+let stubChatProvider = OpenAICompatibleTranslationProvider(
+    configuration: APIProviderConfiguration(
+        providerID: .deepSeek,
+        apiKey: "test-secret",
+        endpoint: URL(string: "https://example.test/chat/completions")!,
+        model: "deepseek-chat"
+    ),
+    session: stubSession
+)
+let stubChatResult = try await stubChatProvider.translate(
+    TextTranslationRequest(
+        sourceText: "你好",
+        targetLanguage: .english,
+        scene: .faithful
+    )
+)
+expect(stubChatResult == "Hello.", "Chat 译文应去除首尾空白")
+expect(StubURLProtocol.lastRequest?.httpMethod == "POST", "翻译请求应为 POST")
+expect(
+    StubURLProtocol.lastRequest?.value(forHTTPHeaderField: "Authorization")
+        == "Bearer test-secret",
+    "应携带 Bearer API Key"
+)
+expect(
+    StubURLProtocol.lastRequest?.value(forHTTPHeaderField: "Content-Type")
+        == "application/json",
+    "应声明 JSON Content-Type"
+)
+let chatBodyText = String(data: StubURLProtocol.lastBody ?? Data(), encoding: .utf8) ?? ""
+expect(chatBodyText.contains("\"model\":\"deepseek-chat\""), "请求体应包含模型名")
+expect(chatBodyText.contains("\"temperature\":0"), "忠实直译应使用 0 温度")
+let chatMessages = stubBodyJSON()["messages"] as! [[String: Any]]
+expect(
+    (chatMessages[0]["content"] as! String).contains("zh-Hans to en"),
+    "系统提示词应包含语言对"
+)
+let chatUserContent = chatMessages[1]["content"] as! String
+let chatPayload = try! JSONSerialization.jsonObject(
+    with: Data(chatUserContent[chatUserContent.firstIndex(of: "{")!...].utf8)
+) as! [String: Any]
+expect(chatPayload["source_text"] as? String == "你好", "用户负载应携带待翻译文本")
+expect(chatPayload["full_input_context"] == nil, "云端请求不得携带完整输入框上下文")
+
+StubURLProtocol.respond = { _ in
+    (200, "{\"output\":[{\"content\":[{\"type\":\"output_text\",\"text\":\"  こんにちは。  \"}]}]}")
+}
+let stubVolcResult = try await OpenAICompatibleTranslationProvider(
+    configuration: APIProviderConfiguration(
+        providerID: .volcengine,
+        apiKey: "test-secret",
+        endpoint: URL(string: "https://ark.cn-beijing.volces.com/api/v3/responses")!,
+        model: "doubao-seed-translation-250915"
+    ),
+    session: stubSession
+).translate(TextTranslationRequest(sourceText: "你好", targetLanguage: .japanese))
+expect(stubVolcResult == "こんにちは。", "火山 Responses 译文应去除首尾空白")
+let volcBodyJSON = stubBodyJSON()
+expect(volcBodyJSON["messages"] == nil, "火山请求不得使用 Chat messages 结构")
+let volcContent = ((volcBodyJSON["input"] as! [[String: Any]])[0]["content"] as! [[String: Any]])[0]
+expect(volcContent["type"] as? String == "input_text", "火山请求应使用 input_text")
+let volcOptions = volcContent["translation_options"] as! [String: String]
+expect(volcOptions["source_language"] == "zh", "火山请求应归一化源语言为 zh")
+expect(volcOptions["target_language"] == "ja", "火山请求应携带目标语言")
+
+StubURLProtocol.respond = { _ in (401, "{\"error\":{\"message\":\"bad key\"}}") }
+var stubErrorText: String?
+do {
+    _ = try await stubChatProvider.translate(
+        TextTranslationRequest(sourceText: "你好", targetLanguage: .english)
+    )
+} catch {
+    stubErrorText = error.localizedDescription
+}
+expect(stubErrorText?.contains("401") == true, "错误信息应包含状态码")
+expect(stubErrorText?.contains("bad key") == true, "错误信息应包含服务端原因")
+expect(stubErrorText?.contains("DeepSeek") == true, "错误信息应点名提供方")
+
+StubURLProtocol.respond = { _ in (200, "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"   \"}}]}") }
+var emptyResponseText: String?
+do {
+    _ = try await stubChatProvider.translate(
+        TextTranslationRequest(sourceText: "你好", targetLanguage: .english)
+    )
+} catch {
+    emptyResponseText = error.localizedDescription
+}
+expect(emptyResponseText?.contains("没有返回翻译结果") == true, "空译文应报无结果")
+
+StubURLProtocol.respond = { _ in (200, "not-json") }
+var invalidResponseText: String?
+do {
+    _ = try await stubChatProvider.translate(
+        TextTranslationRequest(sourceText: "你好", targetLanguage: .english)
+    )
+} catch {
+    invalidResponseText = error.localizedDescription
+}
+expect(invalidResponseText?.contains("无效响应") == true, "非法 JSON 应报无效响应")
+
 print("HanYiCore checks passed: \(checkCount)")

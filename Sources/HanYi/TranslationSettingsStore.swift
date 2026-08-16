@@ -2,13 +2,6 @@ import Foundation
 import OSLog
 import HanYiCore
 
-struct APIProviderConfiguration: Sendable {
-    let providerID: TranslationProviderID
-    let apiKey: String
-    let endpoint: URL
-    let model: String
-}
-
 struct LocalModelConfiguration: Sendable {
     let endpoint: URL
     let model: String

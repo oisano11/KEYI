@@ -1,21 +1,44 @@
 import Foundation
-import HanYiCore
 
-struct OpenAICompatibleTranslationProvider: TranslationProvider {
-    let id: TranslationProviderID
+public struct APIProviderConfiguration: Sendable {
+    public let providerID: TranslationProviderID
+    public let apiKey: String
+    public let endpoint: URL
+    public let model: String
+
+    public init(
+        providerID: TranslationProviderID,
+        apiKey: String,
+        endpoint: URL,
+        model: String
+    ) {
+        self.providerID = providerID
+        self.apiKey = apiKey
+        self.endpoint = endpoint
+        self.model = model
+    }
+}
+
+public struct OpenAICompatibleTranslationProvider: TranslationProvider {
+    public let id: TranslationProviderID
 
     private let apiKey: String
     private let endpoint: URL
     private let model: String
+    private let session: URLSession
 
-    init(configuration: APIProviderConfiguration) {
+    public init(
+        configuration: APIProviderConfiguration,
+        session: URLSession = .shared
+    ) {
         id = configuration.providerID
         apiKey = configuration.apiKey
         endpoint = configuration.endpoint
         model = configuration.model
+        self.session = session
     }
 
-    func translate(_ request: TextTranslationRequest) async throws -> String {
+    public func translate(_ request: TextTranslationRequest) async throws -> String {
         guard !request.sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw APITranslationError.emptySource
         }
@@ -57,7 +80,7 @@ struct OpenAICompatibleTranslationProvider: TranslationProvider {
             )
         }
 
-        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+        let (data, response) = try await session.data(for: urlRequest)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APITranslationError.invalidResponse
         }
