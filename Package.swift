@@ -3,18 +3,18 @@
 import PackageDescription
 
 let package = Package(
-    name: "HanYi",
+    name: "KEYI",
     platforms: [
         .macOS(.v15)
     ],
     products: [
-        .executable(name: "HanYi", targets: ["HanYi"])
+        .executable(name: "KEYI", targets: ["KEYI"])
     ],
     targets: [
-        .target(name: "HanYiCore"),
+        .target(name: "KEYICore"),
         .executableTarget(
-            name: "HanYi",
-            dependencies: ["HanYiCore"],
+            name: "KEYI",
+            dependencies: ["KEYICore"],
             linkerSettings: [
                 .linkedFramework("ApplicationServices"),
                 .linkedFramework("Carbon"),
@@ -22,9 +22,9 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "HanYiCoreChecks",
-            dependencies: ["HanYiCore"],
-            path: "Tests/HanYiCoreChecks"
+            name: "KEYICoreChecks",
+            dependencies: ["KEYICore"],
+            path: "Tests/KEYICoreChecks"
         )
     ]
 )

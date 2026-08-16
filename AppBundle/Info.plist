@@ -5,11 +5,11 @@
 	<key>CFBundleDisplayName</key>
 	<string>KEYI 可译</string>
 	<key>CFBundleExecutable</key>
-	<string>HanYi</string>
+	<string>KEYI</string>
 	<key>CFBundleIconFile</key>
 	<string>KEYI.icns</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.hanyi.input-translator</string>
+	<string>com.keyi.input-translator</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>

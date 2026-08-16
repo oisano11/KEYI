@@ -15,7 +15,7 @@ fi
 
 INSTALLED_APP="${INSTALL_DIR%/}/KEYI 可译.app"
 
-pkill -x HanYi 2>/dev/null || true
+pkill -x KEYI 2>/dev/null || true
 if [[ -d "$INSTALLED_APP" ]]; then
     "$LSREGISTER" -u "$INSTALLED_APP" 2>/dev/null || true
 fi

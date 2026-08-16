@@ -26,7 +26,7 @@ fi
 export DOTNET_CLI_TELEMETRY_OPTOUT=1
 export DOTNET_NOLOGO=1
 APP_VERSION="$("$DOTNET_COMMAND" msbuild \
-  "$ROOT_DIR/Windows/HanYi.Windows/HanYi.Windows.csproj" \
+  "$ROOT_DIR/Windows/KEYI.Windows/KEYI.Windows.csproj" \
   -getProperty:Version)"
 if [[ ! "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "错误：Windows 版本号无效：$APP_VERSION" >&2
@@ -34,8 +34,8 @@ if [[ ! "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 rm -rf "$OUTPUT_DIR"
-"$DOTNET_COMMAND" run --project "$ROOT_DIR/Windows/HanYi.CoreChecks/HanYi.CoreChecks.csproj" -c Release
-"$DOTNET_COMMAND" publish "$ROOT_DIR/Windows/HanYi.Windows/HanYi.Windows.csproj" \
+"$DOTNET_COMMAND" run --project "$ROOT_DIR/Windows/KEYI.CoreChecks/KEYI.CoreChecks.csproj" -c Release
+"$DOTNET_COMMAND" publish "$ROOT_DIR/Windows/KEYI.Windows/KEYI.Windows.csproj" \
   -c Release \
   -r win-x64 \
   --self-contained true \
@@ -47,7 +47,7 @@ rm -rf "$OUTPUT_DIR"
 
 python3 "$ROOT_DIR/Scripts/inspect-pe-version.py" \
   --expected-version "$APP_VERSION" \
-  "$PUBLISH_DIR/HanYi.exe"
+  "$PUBLISH_DIR/KEYI.exe"
 
 if ! command -v makensis >/dev/null 2>&1; then
   echo "错误：缺少 makensis。macOS 可执行 brew install nsis。" >&2
@@ -62,7 +62,7 @@ else
   exit 1
 fi
 
-NSIS_APP_FILE="$PUBLISH_DIR/HanYi.exe"
+NSIS_APP_FILE="$PUBLISH_DIR/KEYI.exe"
 NSIS_OUTPUT_DIR="$OUTPUT_DIR"
 if command -v cygpath >/dev/null 2>&1; then
   NSIS_APP_FILE="$(cygpath -w "$NSIS_APP_FILE")"
@@ -73,20 +73,20 @@ makensis \
   -DAPP_FILE="$NSIS_APP_FILE" \
   -DOUTPUT_DIR="$NSIS_OUTPUT_DIR" \
   -DAPP_VERSION="$APP_VERSION" \
-  "$ROOT_DIR/Windows/Installer/HanYi.nsi"
+  "$ROOT_DIR/Windows/Installer/KEYI.nsi"
 
 python3 "$ROOT_DIR/Scripts/inspect-pe-version.py" \
   --expected-version "$APP_VERSION" \
-  "$OUTPUT_DIR/HanYi-Setup.exe"
+  "$OUTPUT_DIR/KEYI-Setup.exe"
 
 EXTRACT_DIR="$VERIFY_DIR/extracted"
 "$SEVEN_ZIP_COMMAND" x \
   -y \
   "-o$EXTRACT_DIR" \
-  "$OUTPUT_DIR/HanYi-Setup.exe" >/dev/null
-EXTRACTED_APP="$EXTRACT_DIR/HanYi.exe"
+  "$OUTPUT_DIR/KEYI-Setup.exe" >/dev/null
+EXTRACTED_APP="$EXTRACT_DIR/KEYI.exe"
 if [[ ! -f "$EXTRACTED_APP" ]]; then
-  echo "错误：安装器解包后缺少 HanYi.exe。" >&2
+  echo "错误：安装器解包后缺少 KEYI.exe。" >&2
   exit 1
 fi
 
@@ -94,23 +94,23 @@ python3 "$ROOT_DIR/Scripts/inspect-pe-version.py" \
   --expected-version "$APP_VERSION" \
   "$EXTRACTED_APP"
 
-PUBLISHED_APP_SHA256="$(shasum -a 256 "$PUBLISH_DIR/HanYi.exe" | awk '{print $1}')"
+PUBLISHED_APP_SHA256="$(shasum -a 256 "$PUBLISH_DIR/KEYI.exe" | awk '{print $1}')"
 EXTRACTED_APP_SHA256="$(shasum -a 256 "$EXTRACTED_APP" | awk '{print $1}')"
 if [[ "$PUBLISHED_APP_SHA256" != "$EXTRACTED_APP_SHA256" ]]; then
-  echo "错误：安装器内嵌 HanYi.exe 与本次发布产物 SHA-256 不一致。" >&2
+  echo "错误：安装器内嵌 KEYI.exe 与本次发布产物 SHA-256 不一致。" >&2
   exit 1
 fi
 
 (
   cd "$OUTPUT_DIR"
-  shasum -a 256 HanYi-Setup.exe > HanYi-Setup.exe.sha256
+  shasum -a 256 KEYI-Setup.exe > KEYI-Setup.exe.sha256
 )
 
-file "$PUBLISH_DIR/HanYi.exe"
-file "$OUTPUT_DIR/HanYi-Setup.exe"
+file "$PUBLISH_DIR/KEYI.exe"
+file "$OUTPUT_DIR/KEYI-Setup.exe"
 echo "程序版本：$APP_VERSION"
 echo "程序 SHA-256：$PUBLISHED_APP_SHA256"
 echo "内嵌程序 SHA-256：$EXTRACTED_APP_SHA256"
-echo "Windows 产物：$PUBLISH_DIR/HanYi.exe"
-echo "Windows 安装器：$OUTPUT_DIR/HanYi-Setup.exe"
-echo "安装器校验：$OUTPUT_DIR/HanYi-Setup.exe.sha256"
+echo "Windows 产物：$PUBLISH_DIR/KEYI.exe"
+echo "Windows 安装器：$OUTPUT_DIR/KEYI-Setup.exe"
+echo "安装器校验：$OUTPUT_DIR/KEYI-Setup.exe.sha256"

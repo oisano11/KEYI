@@ -4,13 +4,13 @@
 
 首次公开版仅提供源码。Windows 安装包将在代码签名和 Windows 原生验收完成后单独发布。
 
-构建后，在 Windows 10/11 x64 运行 `HanYi-Setup.exe`，并在系统托盘右键 KEYI 可译图标。
+构建后，在 Windows 10/11 x64 运行 `KEYI-Setup.exe`，并在系统托盘右键 KEYI 可译图标。
 3. 打开“添加/管理模型 API”，配置 DeepSeek、通义千问、火山引擎或 xAI Grok。
 4. 将焦点留在输入框：选中文本时只翻译选区；未选中时翻译全文。
 5. 按默认快捷键 `Alt+T`，英文结果会原地写回。
 6. “版本与发布说明”只说明公开版发布边界，不下载或执行安装器。
 
-API Key 保存在 Windows Credential Manager；Endpoint、模型名、提供方、场景、风格和快捷键保存在 `%LocalAppData%\HanYi\settings.json`（兼容既有设置路径）。
+API Key 保存在 Windows Credential Manager；Endpoint、模型名、提供方、场景、风格和快捷键保存在 `%LocalAppData%\KEYI\settings.json`（兼容既有设置路径）。
 
 ## 微信草稿区 HITL 验收
 
@@ -32,11 +32,11 @@ Scripts/build-windows.sh
 
 产物：
 
-- `.build/windows/app/HanYi.exe`：Windows x64 自包含单文件程序（内部兼容文件名）。
-- `.build/windows/HanYi-Setup.exe`：当前用户级 Windows 安装器。
-- `.build/windows/HanYi-Setup.exe.sha256`：安装器完整性校验文件。
+- `.build/windows/app/KEYI.exe`：Windows x64 自包含单文件程序（内部兼容文件名）。
+- `.build/windows/KEYI-Setup.exe`：当前用户级 Windows 安装器。
+- `.build/windows/KEYI-Setup.exe.sha256`：安装器完整性校验文件。
 
-构建脚本会读取程序和安装器的 PE 文件版本、产品版本，解包安装器后比较内外 `HanYi.exe` 的 SHA-256；任一版本不是项目目标版本或 SHA-256 不一致时构建失败，不得发布。
+构建脚本会读取程序和安装器的 PE 文件版本、产品版本，解包安装器后比较内外 `KEYI.exe` 的 SHA-256；任一版本不是项目目标版本或 SHA-256 不一致时构建失败，不得发布。
 
 ## 发布边界
 
