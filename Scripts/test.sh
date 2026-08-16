@@ -6,3 +6,4 @@ ROOT_DIR="${0:A:h:h}"
 
 cd "$ROOT_DIR"
 swift run KEYICoreChecks
+swift run KEYIAppChecks

@@ -56,6 +56,16 @@ enum CredentialStore {
         removeLegacyCredential(account: account)
     }
 
+    /// 删除指定账户的凭据；条目不存在视为成功，并顺带清理遗留明文文件。
+    static func delete(account: String) throws {
+        try validateAccount(account)
+        let status = SecItemDelete(keychainQuery(account: account) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw CredentialStoreError.writeFailed
+        }
+        removeLegacyCredential(account: account)
+    }
+
     private static func validateAccount(_ account: String) throws {
         guard !account.isEmpty,
               account.unicodeScalars.allSatisfy({

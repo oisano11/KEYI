@@ -191,9 +191,9 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     func configureAPI(for providerID: TranslationProviderID) -> Bool {
-        guard let profile = APITranslationProviderCatalog.profile(
+        guard APITranslationProviderCatalog.profile(
             for: providerID
-        ) else {
+        ) != nil else {
             showError("当前提供方不支持 API 配置")
             return false
         }
@@ -204,11 +204,9 @@ final class AppModel: ObservableObject {
             : "粘贴 API Key"
         let endpointField = NSTextField()
         endpointField.placeholderString = "https://example.com/v1/chat/completions"
-        endpointField.stringValue = settings.endpoint(for: providerID)
-            ?? profile.defaultEndpoint
+        endpointField.stringValue = settings.endpoint(for: providerID) ?? ""
         let modelField = NSTextField()
-        modelField.stringValue = settings.model(for: providerID)
-            ?? profile.defaultModel
+        modelField.stringValue = settings.model(for: providerID) ?? ""
 
         guard presentConfigurationForm(
             title: "配置 \(providerID.displayName) API",

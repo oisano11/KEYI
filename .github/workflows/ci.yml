@@ -9,8 +9,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run macOS core checks
-        run: swift run KEYICoreChecks
+      - name: Run macOS checks
+        run: Scripts/test.sh
       - name: Build macOS app
         run: Scripts/build-app.sh
 

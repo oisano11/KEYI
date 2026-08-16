@@ -1,0 +1,3 @@
+import KEYIUI
+
+KEYIApp.main()

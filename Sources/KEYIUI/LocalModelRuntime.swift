@@ -64,7 +64,7 @@ enum LocalModelRuntime {
         )
 
         // load 失败意味着模型无法进入服务，轮询 90 秒也不会成功，立即报错。
-        try await run(
+        _ = try await run(
             executable: executable,
             arguments: [
                 "load",

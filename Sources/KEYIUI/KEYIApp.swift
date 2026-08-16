@@ -1,10 +1,11 @@
 import SwiftUI
 
-@main
-struct KEYIApp: App {
+public struct KEYIApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
-    var body: some Scene {
+    public init() {}
+
+    public var body: some Scene {
         MenuBarExtra {
             MenuBarContent(model: .shared)
         } label: {
