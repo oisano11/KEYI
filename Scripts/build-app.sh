@@ -6,7 +6,17 @@ SCRIPT_PATH="${(%):-%x}"
 ROOT_DIR="${SCRIPT_PATH:A:h:h}"
 BUILD_DIR="$ROOT_DIR/.build"
 APP_DIR="$BUILD_DIR/KEYI 可译.app"
-SIGNING_IDENTITY="${KEYI_SIGNING_IDENTITY:--}"
+
+# 优先使用本地自签名开发证书：签名身份稳定，辅助功能等隐私授权不会
+# 因为每次重编译的 ad-hoc 签名变化而失效。找不到证书时退回 ad-hoc。
+if [[ -n "${KEYI_SIGNING_IDENTITY:-}" ]]; then
+    SIGNING_IDENTITY="$KEYI_SIGNING_IDENTITY"
+elif security find-identity -p codesigning 2>/dev/null \
+    | grep -q '"KEYI Development Signing"'; then
+    SIGNING_IDENTITY="KEYI Development Signing"
+else
+    SIGNING_IDENTITY="-"
+fi
 
 cd "$ROOT_DIR"
 swift build -c release --product KEYI
