@@ -59,4 +59,4 @@ Scripts/build-windows.sh
 
 ## 状态
 
-macOS 核心检查和 Release 构建可在本机执行。Windows 静态构建与核心检查可执行，但 Windows 10/11 真机的安装、升级、重启和签名验证不应由交叉构建结果替代。
+当前源码发布版本为 1.1.5。macOS 核心检查和 Release 构建可在本机执行。Windows 静态构建与核心检查可执行，但 Windows 10/11 真机的安装、升级、重启和签名验证不应由交叉构建结果替代。

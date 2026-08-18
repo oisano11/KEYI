@@ -61,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             try replaceHotKey(with: AppModel.shared.hotKeyConfiguration)
         } catch {
-            logger.error("Global hot key registration failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("Global hot key registration failed: \(error.localizedDescription, privacy: .private)")
             AppModel.shared.showError(error.localizedDescription)
         }
     }

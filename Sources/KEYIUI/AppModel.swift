@@ -394,7 +394,7 @@ final class AppModel: ObservableObject {
             logger.error("Translation blocked: accessibility permission required")
             requestAccessibilityPermission()
         } catch {
-            logger.error("Focused text capture failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("Focused text capture failed: \(error.localizedDescription, privacy: .private)")
             showError(error.localizedDescription)
         }
     }
@@ -507,7 +507,7 @@ final class AppModel: ObservableObject {
             state = .ready
         } catch {
             guard pendingID == id else { return }
-            logger.error("Translated text commit failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("Translated text commit failed: \(error.localizedDescription, privacy: .private)")
             apiTranslationTask = nil
             clearPending()
             showError(error.localizedDescription)
@@ -522,7 +522,7 @@ final class AppModel: ObservableObject {
             logger.info("Translation cancelled")
             state = .ready
         } else {
-            logger.error("Translation failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("Translation failed: \(error.localizedDescription, privacy: .private)")
             showError("翻译失败：\(error.localizedDescription)")
         }
     }
