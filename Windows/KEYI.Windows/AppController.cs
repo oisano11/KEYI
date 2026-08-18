@@ -328,7 +328,7 @@ internal sealed class AppController : IDisposable
     private void ShowReleaseInformation()
     {
         MessageBox.Show(
-            "首次公开版仅提供源码。Windows 安装包将在完成代码签名和原生验收后单独发布。",
+            "当前 Release 提供未签名的 Windows 实验二进制，不包含自动更新；SmartScreen 可能显示警告，正式原生验收尚未完成。",
             "KEYI 可译",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);

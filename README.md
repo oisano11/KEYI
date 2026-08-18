@@ -28,6 +28,16 @@ Scripts/build-app.sh
 
 构建产物为 `.build/KEYI 可译.app`。首次使用时，在“系统设置 → 隐私与安全性 → 辅助功能”中允许 KEYI 可译。
 
+默认构建仅用于本机开发；没有 Apple Developer 证书时会优先使用本机开发证书（例如 `Codex++ Local Signing`），找不到时才使用 ad-hoc 签名。两者都不能作为受支持的正式分发包。源码 Release 不需要 Apple 证书。
+
+macOS 正式二进制发布前，必须加入 Apple Developer Program，在开发者后台登记 Bundle ID `com.keyi.input-translator`，创建并安装 `Developer ID Application` 证书，然后显式执行：
+
+```sh
+KEYI_SIGNING_MODE=distribution Scripts/build-app.sh
+```
+
+该模式找不到证书会直接失败，不会静默退回 ad-hoc。签名完成后仍需使用 `notarytool` 提交公证并用 `stapler` 固化票据，才能作为受支持的公开安装包。私钥只应留在签名者或受控 CI 中，不要发送给他人。
+
 ### Windows
 
 需要 .NET 8 SDK、NSIS 与 7-Zip：
@@ -36,7 +46,13 @@ Scripts/build-app.sh
 Scripts/build-windows.sh
 ```
 
-详细说明见 [Windows/README.md](Windows/README.md)。首次公开版只提供源码；二进制将在完成代码签名及 Windows 10/11 原生验收后单独发布。
+如需同时生成 macOS/Windows 实验二进制，可执行：
+
+```sh
+Scripts/package-experimental-binaries.sh
+```
+
+详细说明见 [Windows/README.md](Windows/README.md)。稳定的 `v1.1.6` Release 仍以源码为主；`v1.1.6-binary-preview.1` 是未公证/未签名的实验二进制，不提供自动更新或官方安装支持。
 
 ## 数据与隐私
 
@@ -59,4 +75,4 @@ Scripts/build-windows.sh
 
 ## 状态
 
-当前源码发布版本为 1.1.6。macOS 核心检查和 Release 构建可在本机执行。Windows 静态构建与核心检查可执行，但 Windows 10/11 真机的安装、升级、重启和签名验证不应由交叉构建结果替代。
+当前源码版本为 1.1.6。实验二进制只用于自愿测试；Windows 10/11 真机的安装、升级、重启和签名验证仍未完成，macOS 实验包也未通过 Gatekeeper 公证。

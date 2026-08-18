@@ -2,7 +2,7 @@
 
 ## 安装与使用
 
-首次公开版仅提供源码。Windows 安装包将在代码签名和 Windows 原生验收完成后单独发布。
+当前 Release 附带 Windows x64 实验安装器和便携程序。两者未使用 Authenticode 签名，SmartScreen 可能显示警告；Windows 10/11 原生安装、升级和重启验收尚未完成。
 
 构建后，在 Windows 10/11 x64 运行 `KEYI-Setup.exe`，并在系统托盘右键 KEYI 可译图标。
 1. 打开“添加/管理模型 API”，配置 DeepSeek、通义千问、火山引擎或 xAI Grok。
@@ -40,7 +40,7 @@ Scripts/build-windows.sh
 
 ## 发布边界
 
-首次公开版不包含自动更新，也不绑定任何旧发布仓库。未来提供二进制前，必须完成 Authenticode 签名、发布者验证和 Windows 10/11 原生安装/升级验收。
+实验版不包含自动更新，也不绑定任何旧发布仓库。正式受支持的二进制仍必须完成 Authenticode 签名、发布者验证和 Windows 10/11 原生安装/升级验收。
 
 ## 支持边界
 
