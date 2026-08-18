@@ -198,20 +198,26 @@ final class AccessibilityTextClient {
         )
     }
 
-    func replace(snapshot: Snapshot, with translatedText: String) async throws {
+    func replace(
+        snapshot: Snapshot,
+        with translatedText: String,
+        isCurrent: @escaping @MainActor () -> Bool
+    ) async throws {
         guard isTrusted else { throw Error.permissionRequired }
 
         if case .keyboardPaste = snapshot.writeMode {
             try await replaceUsingKeyboardPaste(
                 snapshot: snapshot,
-                translatedText: translatedText
+                translatedText: translatedText,
+                isCurrent: isCurrent
             )
             return
         }
         if case .terminalPaste = snapshot.writeMode {
             try await replaceTerminalCommand(
                 snapshot: snapshot,
-                translatedText: translatedText
+                translatedText: translatedText,
+                isCurrent: isCurrent
             )
             return
         }
@@ -223,7 +229,8 @@ final class AccessibilityTextClient {
             if case .browserPaste = snapshot.writeMode {
                 try await replaceUsingKeyboardPaste(
                     snapshot: snapshot,
-                    translatedText: translatedText
+                    translatedText: translatedText,
+                    isCurrent: isCurrent
                 )
                 return
             }
@@ -234,7 +241,8 @@ final class AccessibilityTextClient {
             if case .browserPaste = snapshot.writeMode {
                 try await replaceUsingKeyboardPaste(
                     snapshot: snapshot,
-                    translatedText: translatedText
+                    translatedText: translatedText,
+                    isCurrent: isCurrent
                 )
                 return
             }
@@ -250,7 +258,8 @@ final class AccessibilityTextClient {
             if case .browserPaste = snapshot.writeMode {
                 try await replaceUsingKeyboardPaste(
                     snapshot: snapshot,
-                    translatedText: translatedText
+                    translatedText: translatedText,
+                    isCurrent: isCurrent
                 )
                 return
             }
@@ -264,6 +273,7 @@ final class AccessibilityTextClient {
             throw Error.invalidSelection
         }
 
+        try TranslationWriteBackGate.requireActive(isCurrent)
         let result: AXError
         switch snapshot.writeMode {
         case .value:
@@ -284,7 +294,8 @@ final class AccessibilityTextClient {
                 range: snapshot.selection.range,
                 translatedText: translatedText,
                 originalValue: snapshot.originalValue,
-                expectedValue: updatedValue
+                expectedValue: updatedValue,
+                isCurrent: isCurrent
             )
             return
         case .keyboardPaste:
@@ -367,9 +378,18 @@ final class AccessibilityTextClient {
         return value?.isEmpty == false ? value : nil
     }
 
+    private func copyFocusedText(
+        using pasteboard: NSPasteboard,
+        isCurrent: @escaping @MainActor () -> Bool
+    ) async throws -> String? {
+        try TranslationWriteBackGate.requireActive(isCurrent)
+        return await copyFocusedText(using: pasteboard)
+    }
+
     private func replaceUsingKeyboardPaste(
         snapshot: Snapshot,
-        translatedText: String
+        translatedText: String,
+        isCurrent: @escaping @MainActor () -> Bool
     ) async throws {
         guard let expectedProcessIdentifier = snapshot.applicationProcessIdentifier,
               frontmostTargetApplication()?.processIdentifier == expectedProcessIdentifier else {
@@ -380,9 +400,10 @@ final class AccessibilityTextClient {
         let pasteboardScope = ScopedPasteboard(pasteboard: pasteboard)
         defer { pasteboardScope.restoreIfUnchanged() }
 
-        let selectionMatches = await restoreExpectedKeyboardSelection(
+        let selectionMatches = try await restoreExpectedKeyboardSelection(
             snapshot: snapshot,
-            using: pasteboard
+            using: pasteboard,
+            isCurrent: isCurrent
         )
         pasteboardScope.trackLatestChange()
         guard selectionMatches else {
@@ -398,6 +419,7 @@ final class AccessibilityTextClient {
                 == expectedProcessIdentifier else {
             throw Error.contentChanged
         }
+        try TranslationWriteBackGate.requireActive(isCurrent)
         guard postPasteShortcut() else {
             throw Error.browserInputFailed
         }
@@ -406,9 +428,13 @@ final class AccessibilityTextClient {
 
     private func restoreExpectedKeyboardSelection(
         snapshot: Snapshot,
-        using pasteboard: NSPasteboard
-    ) async -> Bool {
-        if await copyFocusedText(using: pasteboard) == snapshot.selection.text {
+        using pasteboard: NSPasteboard,
+        isCurrent: @escaping @MainActor () -> Bool
+    ) async throws -> Bool {
+        if try await copyFocusedText(
+            using: pasteboard,
+            isCurrent: isCurrent
+        ) == snapshot.selection.text {
             return true
         }
 
@@ -419,11 +445,16 @@ final class AccessibilityTextClient {
                kAXValueAttribute,
                from: element
            ) as? String,
-           currentValue == snapshot.originalValue,
-           setSelectionRange(snapshot.selection.range, on: element) == .success {
-            await pause(40)
-            if await copyFocusedText(using: pasteboard) == snapshot.selection.text {
-                return true
+           currentValue == snapshot.originalValue {
+            try TranslationWriteBackGate.requireActive(isCurrent)
+            if setSelectionRange(snapshot.selection.range, on: element) == .success {
+                await pause(40)
+                if try await copyFocusedText(
+                    using: pasteboard,
+                    isCurrent: isCurrent
+                ) == snapshot.selection.text {
+                    return true
+                }
             }
         }
 
@@ -431,17 +462,24 @@ final class AccessibilityTextClient {
         // 整个输入框时才重新全选；复制结果必须与原文完全一致才能回写。
         let originalLength = (snapshot.originalValue as NSString).length
         guard snapshot.selection.range == NSRange(location: 0, length: originalLength),
-              snapshot.selection.text == snapshot.originalValue,
-              postKeyCombo(virtualKey: CGKeyCode(kVK_ANSI_A)) else {
+              snapshot.selection.text == snapshot.originalValue else {
+            return false
+        }
+        try TranslationWriteBackGate.requireActive(isCurrent)
+        guard postKeyCombo(virtualKey: CGKeyCode(kVK_ANSI_A)) else {
             return false
         }
         await pause(80)
-        return await copyFocusedText(using: pasteboard) == snapshot.originalValue
+        return try await copyFocusedText(
+            using: pasteboard,
+            isCurrent: isCurrent
+        ) == snapshot.originalValue
     }
 
     private func replaceTerminalCommand(
         snapshot: Snapshot,
-        translatedText: String
+        translatedText: String,
+        isCurrent: @escaping @MainActor () -> Bool
     ) async throws {
         guard TerminalCommandSelection.isSafeReplacement(translatedText) else {
             throw Error.unsafeTerminalTranslation
@@ -481,6 +519,7 @@ final class AccessibilityTextClient {
             length: currentRange.location - snapshot.selection.range.location
         )
         let deletedText = originalText.substring(with: deletedRange)
+        try TranslationWriteBackGate.requireActive(isCurrent)
         guard postBackspaces(count: deletedText.count) else {
             throw Error.terminalWriteFailed
         }
@@ -517,6 +556,7 @@ final class AccessibilityTextClient {
               rangeBeforePaste == clearedRange else {
             throw Error.contentChanged
         }
+        try TranslationWriteBackGate.requireActive(isCurrent)
         guard postPasteShortcut() else {
             throw Error.terminalWriteFailed
         }
@@ -757,8 +797,10 @@ final class AccessibilityTextClient {
         range: NSRange,
         translatedText: String,
         originalValue: String,
-        expectedValue: String
+        expectedValue: String,
+        isCurrent: @escaping @MainActor () -> Bool
     ) async throws {
+        try TranslationWriteBackGate.requireActive(isCurrent)
         let selectionResult = setSelectionRange(range, on: element)
         guard selectionResult == .success else {
             throw Error.writeFailed(selectionResult)
@@ -773,6 +815,7 @@ final class AccessibilityTextClient {
         pasteboardScope.trackLatestChange()
         defer { pasteboardScope.restoreIfUnchanged() }
 
+        try TranslationWriteBackGate.requireActive(isCurrent)
         guard postPasteShortcut() else {
             throw Error.browserInputFailed
         }

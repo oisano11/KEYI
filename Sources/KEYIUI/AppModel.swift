@@ -489,14 +489,26 @@ final class AppModel: ObservableObject {
 
     func completeTranslation(id: UUID, translatedText: String) async {
         guard pendingID == id, let snapshot = pendingSnapshot else { return }
-        apiTranslationTask = nil
         do {
-            try await accessibility.replace(snapshot: snapshot, with: translatedText)
+            try await accessibility.replace(
+                snapshot: snapshot,
+                with: translatedText,
+                isCurrent: { [weak self] in self?.pendingID == id }
+            )
+            guard pendingID == id else { return }
             logger.info("Translated text committed")
+            apiTranslationTask = nil
             clearPending()
             state = .success
+        } catch is CancellationError {
+            guard pendingID == id else { return }
+            apiTranslationTask = nil
+            clearPending()
+            state = .ready
         } catch {
+            guard pendingID == id else { return }
             logger.error("Translated text commit failed: \(error.localizedDescription, privacy: .public)")
+            apiTranslationTask = nil
             clearPending()
             showError(error.localizedDescription)
         }

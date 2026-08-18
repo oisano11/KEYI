@@ -31,11 +31,19 @@ enum TranslationSettingsError: LocalizedError {
 final class TranslationSettingsStore {
     private let defaults: UserDefaults
     private let preferencesKey = "translation.preferences"
+    private let legacyMigrationKey = "translation.migrated-from-hanyi-v1"
 
     private(set) var preferences: TranslationPreferences
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults = .standard,
+        legacyDefaults: UserDefaults? = UserDefaults(
+            suiteName: "com.hanyi.input-translator"
+        )
+    ) {
         self.defaults = defaults
+        self.preferences = TranslationPreferences()
+        migrateLegacyValues(from: legacyDefaults)
         if let data = defaults.data(forKey: preferencesKey),
            let stored = try? JSONDecoder().decode(
                TranslationPreferences.self,
@@ -51,6 +59,26 @@ final class TranslationSettingsStore {
         ).isAvailable {
             preferences = TranslationPreferences()
             persistPreferences()
+        }
+    }
+
+    private func migrateLegacyValues(from legacyDefaults: UserDefaults?) {
+        guard let legacyDefaults,
+              legacyDefaults !== defaults,
+              defaults.object(forKey: legacyMigrationKey) == nil else {
+            return
+        }
+        defer { defaults.set(true, forKey: legacyMigrationKey) }
+
+        var keys = [preferencesKey, localEndpointKey, localModelKey]
+        for providerID in APITranslationProviderCatalog.profiles.map(\.providerID) {
+            keys.append(endpointKey(for: providerID))
+            keys.append(modelKey(for: providerID))
+        }
+        for key in keys where defaults.object(forKey: key) == nil {
+            if let legacyValue = legacyDefaults.object(forKey: key) {
+                defaults.set(legacyValue, forKey: key)
+            }
         }
     }
 

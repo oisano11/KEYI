@@ -49,7 +49,25 @@ Section "KEYI 可译" MainSection
   SetShellVarContext current
   nsExec::ExecToLog 'taskkill /IM KEYI.exe /F'
   Pop $0
+  nsExec::ExecToLog 'taskkill /IM HanYi.exe /F'
+  Pop $0
   Sleep 500
+  ; Preserve legacy settings for app-level migration, but remove only known
+  ; legacy program files, shortcuts, and registry registrations.
+  Delete "$LOCALAPPDATA\Programs\HanYi\HanYi.exe"
+  Delete "$LOCALAPPDATA\Programs\HanYi\Uninstall.exe"
+  RMDir "$LOCALAPPDATA\Programs\HanYi"
+  ReadRegStr $0 HKCU "Software\HanYi" "InstallDir"
+  StrCmp $0 "" legacyInstallCleanupDone
+  Delete "$0\HanYi.exe"
+  Delete "$0\Uninstall.exe"
+  RMDir "$0"
+legacyInstallCleanupDone:
+  Delete "$SMPROGRAMS\HanYi\KEYI 可译.lnk"
+  Delete "$SMPROGRAMS\HanYi\卸载 KEYI 可译.lnk"
+  RMDir "$SMPROGRAMS\HanYi"
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\HanYi"
+  DeleteRegKey HKCU "Software\HanYi"
   SetOutPath "$INSTDIR"
   File "${APP_FILE}"
   WriteUninstaller "$INSTDIR\Uninstall.exe"

@@ -1,4 +1,3 @@
-using System.Text;
 using System.IO;
 using KEYI.Core;
 
@@ -10,33 +9,15 @@ internal sealed class SettingsStore
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "KEYI");
 
+    private readonly string _legacyDirectory = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "HanYi");
+
     public string FilePath => Path.Combine(_directory, "settings.json");
 
-    public AppSettings Load()
-    {
-        try
-        {
-            if (File.Exists(FilePath))
-            {
-                return SettingsJson.Deserialize(File.ReadAllText(FilePath, Encoding.UTF8));
-            }
-        }
-        catch
-        {
-            // A corrupt preference file must not prevent the tray entry from starting.
-        }
+    private string LegacyFilePath => Path.Combine(_legacyDirectory, "settings.json");
 
-        var settings = new AppSettings();
-        settings.EnsureDefaults();
-        return settings;
-    }
+    public AppSettings Load() => SettingsFileStore.Load(FilePath, LegacyFilePath);
 
-    public void Save(AppSettings settings)
-    {
-        settings.EnsureDefaults();
-        Directory.CreateDirectory(_directory);
-        var temporaryPath = FilePath + ".tmp";
-        File.WriteAllText(temporaryPath, SettingsJson.Serialize(settings), Encoding.UTF8);
-        File.Move(temporaryPath, FilePath, true);
-    }
+    public void Save(AppSettings settings) => SettingsFileStore.Save(FilePath, settings);
 }

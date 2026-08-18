@@ -17,7 +17,10 @@ private func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
 let settingsSuiteName = "KEYIAppChecks-\(UUID().uuidString)"
 let settingsDefaults = UserDefaults(suiteName: settingsSuiteName)!
 
-let store = TranslationSettingsStore(defaults: settingsDefaults)
+let store = TranslationSettingsStore(
+    defaults: settingsDefaults,
+    legacyDefaults: nil
+)
 expect(store.preferences.providerID == .appleSystem, "新用户默认使用系统翻译")
 expect(store.preferences.targetLanguage == .english, "新用户默认英语")
 expect(
@@ -89,6 +92,77 @@ expect(
 )
 settingsDefaults.removePersistentDomain(forName: settingsSuiteName)
 
+// MARK: - HanYi -> KEYI UserDefaults migration
+
+let legacySettingsSuiteName = "KEYIAppChecks-Legacy-\(UUID().uuidString)"
+let migratedSettingsSuiteName = "KEYIAppChecks-Migrated-\(UUID().uuidString)"
+let currentSettingsSuiteName = "KEYIAppChecks-Current-\(UUID().uuidString)"
+let legacySettingsDefaults = UserDefaults(suiteName: legacySettingsSuiteName)!
+let migratedSettingsDefaults = UserDefaults(suiteName: migratedSettingsSuiteName)!
+let currentSettingsDefaults = UserDefaults(suiteName: currentSettingsSuiteName)!
+
+let legacyPreferences = TranslationPreferences(
+    providerID: .qwen,
+    targetLanguage: .japanese,
+    scene: .business,
+    englishStyle: .british
+)
+legacySettingsDefaults.set(
+    try! JSONEncoder().encode(legacyPreferences),
+    forKey: "translation.preferences"
+)
+legacySettingsDefaults.set(
+    "https://legacy.example.test/v1/chat/completions",
+    forKey: "translation.api.qwen.endpoint"
+)
+legacySettingsDefaults.set(
+    "legacy-qwen",
+    forKey: "translation.api.qwen.model"
+)
+legacySettingsDefaults.set(
+    "http://127.0.0.1:9123/v1/chat/completions",
+    forKey: "translation.local.endpoint"
+)
+legacySettingsDefaults.set(
+    "legacy-local-model",
+    forKey: "translation.local.gemma4.model"
+)
+
+let migratedStore = TranslationSettingsStore(
+    defaults: migratedSettingsDefaults,
+    legacyDefaults: legacySettingsDefaults
+)
+expect(migratedStore.preferences == legacyPreferences, "旧版翻译偏好应迁移到 KEYI 域")
+expect(
+    migratedStore.endpoint(for: .qwen) == "https://legacy.example.test/v1/chat/completions",
+    "旧版 API Endpoint 应迁移到 KEYI 域"
+)
+expect(migratedStore.model(for: .qwen) == "legacy-qwen", "旧版模型名应迁移到 KEYI 域")
+expect(
+    migratedStore.localModelEndpoint() == "http://127.0.0.1:9123/v1/chat/completions",
+    "旧版本地模型 Endpoint 应迁移到 KEYI 域"
+)
+expect(migratedStore.localModelName() == "legacy-local-model", "旧版本地模型名应迁移到 KEYI 域")
+
+let currentPreferences = TranslationPreferences(providerID: .deepSeek)
+currentSettingsDefaults.set(
+    try! JSONEncoder().encode(currentPreferences),
+    forKey: "translation.preferences"
+)
+currentSettingsDefaults.set(
+    "https://current.example.test/v1/chat/completions",
+    forKey: "translation.api.qwen.endpoint"
+)
+let currentStore = TranslationSettingsStore(
+    defaults: currentSettingsDefaults,
+    legacyDefaults: legacySettingsDefaults
+)
+expect(currentStore.preferences == currentPreferences, "已有 KEYI 翻译偏好必须优先")
+expect(
+    currentStore.endpoint(for: .qwen) == "https://current.example.test/v1/chat/completions",
+    "已有 KEYI API Endpoint 必须优先"
+)
+
 // MARK: - HotKeyConfiguration / HotKeySettingsStore
 
 expect(HotKeyConfiguration.default.isValid, "默认快捷键 ⌥T 应有效")
@@ -102,7 +176,10 @@ expect(decodedHotKey == HotKeyConfiguration.default, "快捷键配置应可往�
 
 let hotKeySuiteName = "KEYIAppChecks-HotKey-\(UUID().uuidString)"
 let hotKeyDefaults = UserDefaults(suiteName: hotKeySuiteName)!
-let hotKeyStore = HotKeySettingsStore(defaults: hotKeyDefaults)
+let hotKeyStore = HotKeySettingsStore(
+    defaults: hotKeyDefaults,
+    legacyDefaults: nil
+)
 expect(
     hotKeyStore.configuration == .default,
     "无保存数据时应回退默认快捷键"
@@ -114,7 +191,7 @@ expect(
 )
 hotKeyDefaults.set(Data("{}".utf8), forKey: "hotKeyConfiguration")
 expect(
-    HotKeySettingsStore(defaults: hotKeyDefaults).configuration == .default,
+    HotKeySettingsStore(defaults: hotKeyDefaults, legacyDefaults: nil).configuration == .default,
     "无法解码的数据应回退默认快捷键"
 )
 hotKeyDefaults.set(
@@ -122,10 +199,66 @@ hotKeyDefaults.set(
     forKey: "hotKeyConfiguration"
 )
 expect(
-    HotKeySettingsStore(defaults: hotKeyDefaults).configuration == .default,
+    HotKeySettingsStore(defaults: hotKeyDefaults, legacyDefaults: nil).configuration == .default,
     "无修饰键的非法配置应回退默认快捷键"
 )
 hotKeyDefaults.removePersistentDomain(forName: hotKeySuiteName)
+
+let legacyHotKeyData = try! JSONEncoder().encode(HotKeyConfiguration.default)
+legacySettingsDefaults.set(legacyHotKeyData, forKey: "hotKeyConfiguration")
+let migratedHotKeyStore = HotKeySettingsStore(
+    defaults: migratedSettingsDefaults,
+    legacyDefaults: legacySettingsDefaults
+)
+expect(migratedHotKeyStore.configuration == .default, "旧版快捷键应迁移到 KEYI 域")
+expect(
+    migratedSettingsDefaults.data(forKey: "hotKeyConfiguration") == legacyHotKeyData,
+    "迁移后的 KEYI 快捷键数据应保留"
+)
+
+let alternateHotKey = try! JSONDecoder().decode(
+    HotKeyConfiguration.self,
+    from: Data("{\"keyCode\":11,\"modifiers\":2048,\"keyName\":\"B\"}".utf8)
+)
+let currentHotKeyData = try! JSONEncoder().encode(alternateHotKey)
+currentSettingsDefaults.set(currentHotKeyData, forKey: "hotKeyConfiguration")
+let currentHotKeyStore = HotKeySettingsStore(
+    defaults: currentSettingsDefaults,
+    legacyDefaults: legacySettingsDefaults
+)
+expect(currentHotKeyStore.configuration == alternateHotKey, "已有 KEYI 快捷键必须优先")
+
+legacySettingsDefaults.removePersistentDomain(forName: legacySettingsSuiteName)
+migratedSettingsDefaults.removePersistentDomain(forName: migratedSettingsSuiteName)
+currentSettingsDefaults.removePersistentDomain(forName: currentSettingsSuiteName)
+
+// MARK: - Async write-back cancellation gate
+
+var emittedWriteAfterCancellation = false
+do {
+    try TranslationWriteBackGate.requireActive { false }
+    emittedWriteAfterCancellation = true
+} catch is CancellationError {
+    // The request was cleared before a simulated input event could be emitted.
+}
+expect(!emittedWriteAfterCancellation, "已取消请求不得继续发出回写事件")
+
+var writeRequestIsCurrent = true
+var emittedDeferredWrite = false
+let deferredWrite = Task { @MainActor in
+    try? await Task.sleep(for: .milliseconds(20))
+    do {
+        try TranslationWriteBackGate.requireActive { writeRequestIsCurrent }
+        emittedDeferredWrite = true
+    } catch is CancellationError {
+        // Recovery cleared the request during an asynchronous wait.
+    } catch {
+        fatalError("回写门控返回了非取消错误：\(error)")
+    }
+}
+writeRequestIsCurrent = false
+await deferredWrite.value
+expect(!emittedDeferredWrite, "异步等待后已取消请求不得发出回写事件")
 
 // MARK: - CredentialStore（真实钥匙串往返；使用专用测试账号并在结束与失败前清理）
 

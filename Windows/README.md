@@ -5,12 +5,12 @@
 首次公开版仅提供源码。Windows 安装包将在代码签名和 Windows 原生验收完成后单独发布。
 
 构建后，在 Windows 10/11 x64 运行 `KEYI-Setup.exe`，并在系统托盘右键 KEYI 可译图标。
-3. 打开“添加/管理模型 API”，配置 DeepSeek、通义千问、火山引擎或 xAI Grok。
-4. 将焦点留在输入框：选中文本时只翻译选区；未选中时翻译全文。
-5. 按默认快捷键 `Alt+T`，英文结果会原地写回。
-6. “版本与发布说明”只说明公开版发布边界，不下载或执行安装器。
+1. 打开“添加/管理模型 API”，配置 DeepSeek、通义千问、火山引擎或 xAI Grok。
+2. 将焦点留在输入框：选中文本时只翻译选区；未选中时翻译全文。
+3. 按默认快捷键 `Alt+T`，英文结果会原地写回。
+4. “版本与发布说明”只说明公开版发布边界，不下载或执行安装器。
 
-API Key 保存在 Windows Credential Manager；Endpoint、模型名、提供方、场景、风格和快捷键保存在 `%LocalAppData%\KEYI\settings.json`（兼容既有设置路径）。
+API Key 保存在 Windows Credential Manager；Endpoint、模型名、提供方、场景、风格和快捷键保存在 `%LocalAppData%\KEYI\settings.json`。首次从 HanYi 升级时，若 KEYI 设置文件尚不存在，会自动导入 `%LocalAppData%\HanYi\settings.json`；已有 KEYI 设置始终优先。旧 Credential Manager 目标名不会自动迁移，需重新输入一次 API Key。
 
 ## 微信草稿区 HITL 验收
 

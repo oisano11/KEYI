@@ -13,6 +13,7 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("volcengine responses request", CheckVolcengineResponsesRequest),
     ("API error details", CheckApiError),
     ("HTTPS validation", CheckHttpsValidation),
+    ("legacy settings file migration", CheckLegacySettingsFileMigration),
     ("focused text fallback policy", CheckFocusedTextFallbackPolicy),
 };
 
@@ -208,6 +209,54 @@ static Task CheckHttpsValidation()
     {
         Assert(exception.Message.Contains("HTTPS", StringComparison.Ordinal), "HTTPS error");
     }
+    return Task.CompletedTask;
+}
+
+static Task CheckLegacySettingsFileMigration()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"KEYI.CoreChecks-{Guid.NewGuid():N}");
+    var currentPath = Path.Combine(root, "KEYI", "settings.json");
+    var legacyPath = Path.Combine(root, "HanYi", "settings.json");
+
+    try
+    {
+        var legacy = new AppSettings
+        {
+            SelectedProvider = ProviderId.Qwen,
+            TargetLanguage = TranslationLanguage.Japanese,
+            Scene = TranslationScene.Business,
+            EnglishStyle = EnglishStyle.British
+        };
+        legacy.EnsureDefaults();
+        legacy.Providers[ProviderId.Qwen] = new ProviderSettings
+        {
+            Endpoint = "https://legacy.example.test/chat/completions",
+            Model = "legacy-model"
+        };
+        SettingsFileStore.Save(legacyPath, legacy);
+
+        var migrated = SettingsFileStore.Load(currentPath, legacyPath);
+        Assert(migrated.SelectedProvider == ProviderId.Qwen, "legacy provider migrated");
+        Assert(migrated.TargetLanguage == TranslationLanguage.Japanese, "legacy language migrated");
+        Assert(
+            migrated.Providers[ProviderId.Qwen].Endpoint == "https://legacy.example.test/chat/completions",
+            "legacy endpoint migrated");
+        Assert(File.Exists(currentPath), "legacy settings persisted at KEYI path");
+
+        var current = new AppSettings { SelectedProvider = ProviderId.XAI };
+        current.EnsureDefaults();
+        SettingsFileStore.Save(currentPath, current);
+        var currentWins = SettingsFileStore.Load(currentPath, legacyPath);
+        Assert(currentWins.SelectedProvider == ProviderId.XAI, "existing KEYI settings win");
+    }
+    finally
+    {
+        if (Directory.Exists(root))
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
     return Task.CompletedTask;
 }
 
