@@ -63,8 +63,8 @@ Section "KEYI 可译" MainSection
   Delete "$0\Uninstall.exe"
   RMDir "$0"
 legacyInstallCleanupDone:
-  Delete "$SMPROGRAMS\HanYi\KEYI 可译.lnk"
-  Delete "$SMPROGRAMS\HanYi\卸载 KEYI 可译.lnk"
+  Delete "$SMPROGRAMS\HanYi\HanYi.lnk"
+  Delete "$SMPROGRAMS\HanYi\卸载 HanYi.lnk"
   RMDir "$SMPROGRAMS\HanYi"
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\HanYi"
   DeleteRegKey HKCU "Software\HanYi"
