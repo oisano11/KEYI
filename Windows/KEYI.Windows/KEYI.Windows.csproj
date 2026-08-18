@@ -9,7 +9,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>KEYI</AssemblyName>
     <RootNamespace>KEYI.Windows</RootNamespace>
-    <Version>1.1.5</Version>
+    <Version>1.1.6</Version>
     <Company>KEYI</Company>
     <Product>KEYI 可译</Product>
     <ApplicationManifest>app.manifest</ApplicationManifest>
