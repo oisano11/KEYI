@@ -11,6 +11,13 @@ public enum ProviderId
     XAI
 }
 
+public enum InterfaceLanguage
+{
+    Automatic,
+    SimplifiedChinese,
+    English
+}
+
 public sealed record ProviderDefinition(
     ProviderId Id,
     string DisplayName,
@@ -34,8 +41,8 @@ public static class ProviderCatalog
         new(
             ProviderId.Volcengine,
             "火山引擎",
-            "https://ark.cn-beijing.volces.com/api/v3/responses",
-            "doubao-seed-translation-250915"),
+            "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+            "doubao-seed-1-6-250615"),
         new(
             ProviderId.XAI,
             "xAI Grok",
@@ -85,21 +92,21 @@ public static class TranslationOptionNames
 {
     public static string DisplayName(this TranslationScene scene) => scene switch
     {
-        TranslationScene.Automatic => "自动判断",
-        TranslationScene.DailyChat => "日常聊天",
-        TranslationScene.SocialMedia => "X / 社交媒体",
-        TranslationScene.Business => "商务正式",
-        TranslationScene.Faithful => "忠实直译",
+        TranslationScene.Automatic => "自动",
+        TranslationScene.DailyChat => "聊天",
+        TranslationScene.SocialMedia => "发帖",
+        TranslationScene.Business => "商务",
+        TranslationScene.Faithful => "贴近原文",
         _ => scene.ToString()
     };
 
     public static string DisplayName(this EnglishStyle style) => style switch
     {
-        EnglishStyle.Automatic => "自动 / 中性",
-        EnglishStyle.StandardAmerican => "标准美式",
-        EnglishStyle.WestCoast => "美国西海岸",
-        EnglishStyle.BlackAmerican => "Black American / 街头 AAVE",
-        EnglishStyle.British => "英式英语",
+        EnglishStyle.Automatic => "自然",
+        EnglishStyle.StandardAmerican => "美国英语",
+        EnglishStyle.WestCoast => "轻松美式",
+        EnglishStyle.BlackAmerican => "黑人英语",
+        EnglishStyle.British => "英国英语",
         _ => style.ToString()
     };
 
@@ -179,6 +186,7 @@ public sealed class AppSettings
     public TranslationLanguage TargetLanguage { get; set; } = TranslationLanguage.English;
     public TranslationScene Scene { get; set; } = TranslationScene.Automatic;
     public EnglishStyle EnglishStyle { get; set; } = EnglishStyle.Automatic;
+    public InterfaceLanguage InterfaceLanguage { get; set; } = InterfaceLanguage.Automatic;
     public HotKeySettings HotKey { get; set; } = new();
     public Dictionary<ProviderId, ProviderSettings> Providers { get; set; } = [];
 
@@ -207,6 +215,18 @@ public sealed class AppSettings
                 settings.Model = provider.DefaultModel;
             }
         }
+        MigrateLegacyVolcengineSettings();
+    }
+
+    private void MigrateLegacyVolcengineSettings()
+    {
+        if (!Providers.TryGetValue(ProviderId.Volcengine, out var settings))
+        {
+            return;
+        }
+
+        settings.Endpoint = VolcengineChatCompletionsMigration.MigratedEndpoint(settings.Endpoint);
+        settings.Model = VolcengineChatCompletionsMigration.MigratedModel(settings.Model);
     }
 }
 

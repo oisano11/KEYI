@@ -16,13 +16,13 @@ enum TranslationSettingsError: LocalizedError {
     case missingModel
 
     var errorDescription: String? {
-        switch self {
-        case .unsupportedProvider: "当前提供方不支持 API 配置"
-        case .invalidEndpoint: "Endpoint 必须是有效的 HTTPS 地址"
-        case .invalidLocalEndpoint:
-            "本地 Endpoint 必须是 localhost 或 127.0.0.1 的 HTTP 地址"
-        case .missingAPIKey: "API Key 不能为空"
-        case .missingModel: "模型名不能为空"
+        let strings = InterfaceStrings.current
+        return switch self {
+        case .unsupportedProvider: strings.unsupportedProvider
+        case .invalidEndpoint: strings.invalidEndpoint
+        case .invalidLocalEndpoint: strings.invalidLocalEndpoint
+        case .missingAPIKey: strings.missingAPIKey
+        case .missingModel: strings.missingModel
         }
     }
 }
@@ -54,12 +54,25 @@ final class TranslationSettingsStore {
             preferences = TranslationPreferences()
         }
 
+        if let storedLanguage = defaults.string(
+            forKey: InterfaceLanguageStorage.key
+        ), let language = InterfaceLanguage(rawValue: storedLanguage) {
+            preferences.interfaceLanguage = language
+        } else {
+            defaults.set(
+                preferences.interfaceLanguage.rawValue,
+                forKey: InterfaceLanguageStorage.key
+            )
+        }
+
         if !TranslationProviderCatalog.descriptor(
             for: preferences.providerID
         ).isAvailable {
-            preferences = TranslationPreferences()
+            let language = preferences.interfaceLanguage
+            preferences = TranslationPreferences(interfaceLanguage: language)
             persistPreferences()
         }
+        migrateLegacyVolcengineConfigurationIfNeeded()
     }
 
     private func migrateLegacyValues(from legacyDefaults: UserDefaults?) {
@@ -106,6 +119,12 @@ final class TranslationSettingsStore {
         persistPreferences()
     }
 
+    func selectInterfaceLanguage(_ language: InterfaceLanguage) {
+        preferences.interfaceLanguage = language
+        defaults.set(language.rawValue, forKey: InterfaceLanguageStorage.key)
+        persistPreferences()
+    }
+
     func hasAPIKey(for providerID: TranslationProviderID) -> Bool {
         guard let account = apiKeyAccount(for: providerID) else { return false }
         do {
@@ -127,16 +146,24 @@ final class TranslationSettingsStore {
         guard let profile = APITranslationProviderCatalog.profile(for: providerID) else {
             return nil
         }
-        return defaults.string(forKey: endpointKey(for: providerID))
+        let stored = defaults.string(forKey: endpointKey(for: providerID))
             ?? profile.defaultEndpoint
+        if providerID == .volcengine {
+            return VolcengineChatCompletionsMigration.migratedEndpoint(stored)
+        }
+        return stored
     }
 
     func model(for providerID: TranslationProviderID) -> String? {
         guard let profile = APITranslationProviderCatalog.profile(for: providerID) else {
             return nil
         }
-        return defaults.string(forKey: modelKey(for: providerID))
+        let stored = defaults.string(forKey: modelKey(for: providerID))
             ?? profile.defaultModel
+        if providerID == .volcengine {
+            return VolcengineChatCompletionsMigration.migratedModel(stored)
+        }
+        return stored
     }
 
     func localModelEndpoint() -> String {
@@ -248,6 +275,19 @@ final class TranslationSettingsStore {
             return
         }
         defaults.set(data, forKey: preferencesKey)
+    }
+
+    private func migrateLegacyVolcengineConfigurationIfNeeded() {
+        let storedEndpoint = defaults.string(forKey: endpointKey(for: .volcengine))
+        let storedModel = defaults.string(forKey: modelKey(for: .volcengine))
+        let endpoint = VolcengineChatCompletionsMigration.migratedEndpoint(storedEndpoint)
+        let model = VolcengineChatCompletionsMigration.migratedModel(storedModel)
+        if let storedEndpoint, endpoint != storedEndpoint {
+            defaults.set(endpoint, forKey: endpointKey(for: .volcengine))
+        }
+        if let storedModel, model != storedModel {
+            defaults.set(model, forKey: modelKey(for: .volcengine))
+        }
     }
 
     private static let logger = Logger(

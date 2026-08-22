@@ -169,12 +169,24 @@ expect(
 )
 let volcengineProfile = APITranslationProviderCatalog.profile(for: .volcengine)
 expect(
-    volcengineProfile?.defaultEndpoint == "https://ark.cn-beijing.volces.com/api/v3/responses",
-    "火山翻译模型应使用 Responses API"
+    volcengineProfile?.defaultEndpoint == "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+    "火山默认应使用 Chat Completions"
 )
 expect(
-    volcengineProfile?.defaultModel == "doubao-seed-translation-250915",
-    "火山翻译模型名应使用用户指定版本"
+    volcengineProfile?.defaultModel == "doubao-seed-1-6-250615",
+    "火山默认模型应能跟随自定义提示词"
+)
+expect(
+    VolcengineChatCompletionsMigration.migratedEndpoint(
+        "https://ark.cn-beijing.volces.com/api/v3/responses"
+    ) == "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+    "旧火山 Responses 地址应迁到 Chat Completions"
+)
+expect(
+    VolcengineChatCompletionsMigration.migratedModel(
+        "doubao-seed-translation-250915"
+    ) == "doubao-seed-1-6-250615",
+    "旧火山翻译模型应迁到可跟提示词的模型"
 )
 let relayProfile = APITranslationProviderCatalog.profile(for: .relay)
 expect(
@@ -184,36 +196,6 @@ expect(
 expect(
     relayProfile?.defaultModel == "grok-4.5",
     "中转站默认模型应保持可编辑且有默认值"
-)
-
-let volcengineRequestData = try! VolcengineResponsesAPI.requestBody(
-    model: "doubao-seed-translation-250915",
-    text: "你好",
-    sourceLanguage: "zh-Hans",
-    targetLanguage: "en"
-)
-let volcengineRequest = try! JSONSerialization.jsonObject(
-    with: volcengineRequestData
-) as! [String: Any]
-let volcengineInput = (volcengineRequest["input"] as! [[String: Any]])[0]
-let volcengineContent = (volcengineInput["content"] as! [[String: Any]])[0]
-let translationOptions = volcengineContent["translation_options"] as! [String: String]
-expect(volcengineContent["type"] as? String == "input_text", "火山请求必须使用 input_text")
-expect(volcengineContent["text"] as? String == "你好", "火山请求必须发送原始待翻译文本")
-expect(translationOptions["source_language"] == "zh", "火山中文语言代码应为 zh")
-expect(translationOptions["target_language"] == "en", "火山目标语言代码应为 en")
-
-let volcengineResponse = Data(#"""
-{
-    "output": [{
-        "type": "message",
-        "content": [{"type": "output_text", "text": "Hello."}]
-    }]
-}
-"""#.utf8)
-expect(
-    try! VolcengineResponsesAPI.translatedText(from: volcengineResponse) == "Hello.",
-    "应从火山 Responses API 输出中提取译文"
 )
 
 let preferences = TranslationPreferences(providerID: .localModel)
@@ -232,6 +214,20 @@ let legacyPreferences = try! JSONDecoder().decode(
 expect(legacyPreferences.scene == .automatic, "旧偏好应默认使用自动场景")
 expect(legacyPreferences.englishStyle == .automatic, "旧偏好应默认使用中性风格")
 expect(legacyPreferences.targetLanguage == .english, "旧偏好应默认翻译为英语")
+expect(legacyPreferences.interfaceLanguage == .automatic, "旧偏好应默认跟随系统界面语言")
+expect(TranslationScene.dailyChat.displayName == "聊天", "场合短标签应为聊天")
+expect(TranslationScene.socialMedia.displayName == "发帖", "场合短标签应为发帖")
+expect(TranslationScene.faithful.displayName == "贴近原文", "场合短标签应为贴近原文")
+expect(EnglishStyle.automatic.displayName == "自然", "语气短标签应为自然")
+expect(EnglishStyle.blackAmerican.displayName == "黑人英语", "语气短标签应为黑人英语")
+expect(
+    !TranslationPromptBuilder.usesEnglishStyle(language: .japanese, scene: .dailyChat),
+    "语气仅适用于英语"
+)
+expect(
+    !TranslationPromptBuilder.usesEnglishStyle(language: .english, scene: .faithful),
+    "贴近原文不得使用语气"
+)
 
 expect(TranslationLanguage.allCases.count == 12, "国内版应提供十二种常用目标语言")
 expect(
@@ -277,11 +273,14 @@ let streetAAVERequest = TextTranslationRequest(
     englishStyle: .blackAmerican
 )
 let streetAAVEPrompt = TranslationPromptBuilder.systemPrompt(for: streetAAVERequest)
-expect(streetAAVEPrompt.contains("finna") && streetAAVEPrompt.contains("no cap"), "街头 AAVE 应提供自然俚语词汇")
-expect(streetAAVEPrompt.contains("recognisably street cadence"), "街头 AAVE 应明确避免退回中性美式英语")
-expect(streetAAVEPrompt.contains("Bro, this wild as hell, no cap"), "街头 AAVE 应提供足够强度的自然改写示例")
-expect(streetAAVEPrompt.contains("spoken, clipped, and alive"), "街头 AAVE 应强调真实口语节奏")
-expect(streetAAVEPrompt.contains("do not fall back to neutral American English"), "街头 AAVE 禁止退回中性美式")
+expect(streetAAVEPrompt.contains("not a slang quota"), "Black American 默认不得变成俚语配额")
+expect(streetAAVEPrompt.contains("If the source is neutral"), "Black American 应对中性原文保持克制")
+expect(streetAAVEPrompt.contains("syntax, rhythm") || streetAAVEPrompt.contains("Cadence"), "Black American 应优先节奏和句法")
+expect(!streetAAVEPrompt.contains("do not fall back to neutral American English"), "Black American 不得强制禁止中性英语")
+expect(!streetAAVEPrompt.contains("at least one or two"), "Black American 不得要求每句塞标记")
+let streetAAVELocalPrompt = TranslationPromptBuilder.localSystemPrompt(for: streetAAVERequest)
+expect(streetAAVELocalPrompt.contains("Cadence over slang"), "本地 Black American 提示词应为自然默认")
+expect(!streetAAVELocalPrompt.contains("finna"), "本地 Black American 不得点名强制俚语")
 
 let japaneseRequest = TextTranslationRequest(
     sourceText: "你好",
@@ -303,7 +302,7 @@ let businessRequest = TextTranslationRequest(
 )
 let businessPrompt = TranslationPromptBuilder.systemPrompt(for: businessRequest)
 expect(businessPrompt.contains("business or trade register"), "商务场景应使用商务/贸易语域")
-expect(businessPrompt.contains("exact business meaning"), "商务场景应优先准确表达")
+expect(businessPrompt.contains("exact meaning"), "商务场景应优先准确表达")
 expect(businessPrompt.contains("commercial misunderstanding"), "商务场景应避免商业误解")
 expect(!businessPrompt.contains("AAVE"), "商务场景不得注入街头风格")
 expect(!businessPrompt.contains("finna"), "商务场景不得注入街头俚语")
@@ -312,19 +311,6 @@ let businessLocalPrompt = TranslationPromptBuilder.localSystemPrompt(for: busine
 expect(businessLocalPrompt.contains("exact meaning first"), "本地商务提示词应优先准确表达")
 expect(!businessLocalPrompt.contains("AAVE"), "本地商务提示词不得注入街头风格")
 
-let japaneseVolcengineRequestData = try! VolcengineResponsesAPI.requestBody(
-    model: "doubao-seed-translation-250915",
-    text: "你好",
-    sourceLanguage: "zh-Hans",
-    targetLanguage: TranslationLanguage.japanese.rawValue
-)
-let japaneseVolcengineRequest = try! JSONSerialization.jsonObject(
-    with: japaneseVolcengineRequestData
-) as! [String: Any]
-let japaneseInput = (japaneseVolcengineRequest["input"] as! [[String: Any]])[0]
-let japaneseContent = (japaneseInput["content"] as! [[String: Any]])[0]
-let japaneseOptions = japaneseContent["translation_options"] as! [String: String]
-expect(japaneseOptions["target_language"] == "ja", "火山请求应透传非英语目标语言")
 
 // MARK: - OpenAI 兼容提供方 HTTP 语义（URLProtocol 桩）
 
@@ -437,25 +423,26 @@ expect(chatPayload["source_text"] as? String == "你好", "用户负载应携带
 expect(chatPayload["full_input_context"] == nil, "云端请求不得携带完整输入框上下文")
 
 StubURLProtocol.respond = { _ in
-    (200, "{\"output\":[{\"content\":[{\"type\":\"output_text\",\"text\":\"  こんにちは。  \"}]}]}")
+    (200, "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"  こんにちは。  \"}}]}")
 }
 let stubVolcResult = try await OpenAICompatibleTranslationProvider(
     configuration: APIProviderConfiguration(
         providerID: .volcengine,
         apiKey: "test-secret",
-        endpoint: URL(string: "https://ark.cn-beijing.volces.com/api/v3/responses")!,
-        model: "doubao-seed-translation-250915"
+        endpoint: URL(string: "https://ark.cn-beijing.volces.com/api/v3/chat/completions")!,
+        model: "doubao-seed-1-6-250615"
     ),
     session: stubSession
 ).translate(TextTranslationRequest(sourceText: "你好", targetLanguage: .japanese))
-expect(stubVolcResult == "こんにちは。", "火山 Responses 译文应去除首尾空白")
+expect(stubVolcResult == "こんにちは。", "火山 Chat Completions 译文应去除首尾空白")
 let volcBodyJSON = stubBodyJSON()
-expect(volcBodyJSON["messages"] == nil, "火山请求不得使用 Chat messages 结构")
-let volcContent = ((volcBodyJSON["input"] as! [[String: Any]])[0]["content"] as! [[String: Any]])[0]
-expect(volcContent["type"] as? String == "input_text", "火山请求应使用 input_text")
-let volcOptions = volcContent["translation_options"] as! [String: String]
-expect(volcOptions["source_language"] == "zh", "火山请求应归一化源语言为 zh")
-expect(volcOptions["target_language"] == "ja", "火山请求应携带目标语言")
+let volcMessages = volcBodyJSON["messages"] as! [[String: Any]]
+let volcUserContent = volcMessages[1]["content"] as! String
+let volcPayload = try! JSONSerialization.jsonObject(
+    with: Data(volcUserContent[volcUserContent.firstIndex(of: "{")!...].utf8)
+) as! [String: Any]
+expect(volcPayload["source_text"] as? String == "你好", "火山请求应发送原始待翻译文本")
+expect(volcPayload["full_input_context"] == nil, "火山请求不得携带完整输入框上下文")
 
 StubURLProtocol.respond = { _ in (401, "{\"error\":{\"message\":\"bad key\"}}") }
 var stubErrorText: String?

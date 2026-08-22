@@ -48,37 +48,26 @@ public struct OpenAICompatibleTranslationProvider: TranslationProvider {
         urlRequest.timeoutInterval = 45
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        let usesVolcengineResponsesAPI = id == .volcengine
-            && endpoint.path.hasSuffix("/responses")
-        if usesVolcengineResponsesAPI {
-            urlRequest.httpBody = try VolcengineResponsesAPI.requestBody(
+        urlRequest.httpBody = try JSONEncoder().encode(
+            ChatCompletionRequest(
                 model: model,
-                text: request.sourceText,
-                sourceLanguage: request.sourceLanguage,
-                targetLanguage: request.targetLanguage.rawValue
-            )
-        } else {
-            urlRequest.httpBody = try JSONEncoder().encode(
-                ChatCompletionRequest(
-                    model: model,
-                    messages: [
-                        ChatMessage(
-                            role: "system",
-                            content: TranslationPromptBuilder.systemPrompt(
-                                for: request
-                            )
-                        ),
-                        ChatMessage(
-                            role: "user",
-                            content: TranslationPromptBuilder.userPrompt(
-                                for: request
-                            )
+                messages: [
+                    ChatMessage(
+                        role: "system",
+                        content: TranslationPromptBuilder.systemPrompt(
+                            for: request
                         )
-                    ],
-                    temperature: request.scene == .faithful ? 0 : 0.2
-                )
+                    ),
+                    ChatMessage(
+                        role: "user",
+                        content: TranslationPromptBuilder.userPrompt(
+                            for: request
+                        )
+                    )
+                ],
+                temperature: request.scene == .faithful ? 0 : 0.2
             )
-        }
+        )
 
         let (data, response) = try await session.data(for: urlRequest)
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -99,15 +88,11 @@ public struct OpenAICompatibleTranslationProvider: TranslationProvider {
 
         let content: String?
         do {
-            if usesVolcengineResponsesAPI {
-                content = try VolcengineResponsesAPI.translatedText(from: data)
-            } else {
-                content = try JSONDecoder().decode(
-                    ChatCompletionResponse.self,
-                    from: data
-                ).choices.first?.message.content
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-            }
+            content = try JSONDecoder().decode(
+                ChatCompletionResponse.self,
+                from: data
+            ).choices.first?.message.content
+                .trimmingCharacters(in: .whitespacesAndNewlines)
         } catch {
             throw APITranslationError.invalidResponse
         }

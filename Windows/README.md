@@ -10,7 +10,7 @@
 3. 按默认快捷键 `Alt+T`，英文结果会原地写回。
 4. “版本与发布说明”只说明公开版发布边界，不下载或执行安装器。
 
-API Key 保存在 Windows Credential Manager；Endpoint、模型名、提供方、场景、风格和快捷键保存在 `%LocalAppData%\KEYI\settings.json`。首次从 HanYi 升级时，若 KEYI 设置文件尚不存在，会自动导入 `%LocalAppData%\HanYi\settings.json`；已有 KEYI 设置始终优先。旧 Credential Manager 目标名不会自动迁移，需重新输入一次 API Key。
+API Key 保存在 Windows Credential Manager；Endpoint、模型名、提供方、场合、语气和快捷键保存在 `%LocalAppData%\KEYI\settings.json`。首次从 HanYi 升级时，若 KEYI 设置文件尚不存在，会自动导入 `%LocalAppData%\HanYi\settings.json`；已有 KEYI 设置始终优先。旧 Credential Manager 目标名不会自动迁移，需重新输入一次 API Key。
 
 ## 微信草稿区 HITL 验收
 

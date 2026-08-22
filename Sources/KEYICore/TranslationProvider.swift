@@ -1,5 +1,11 @@
 import Foundation
 
+public enum InterfaceLanguage: String, CaseIterable, Codable, Sendable {
+    case automatic
+    case simplifiedChinese
+    case english
+}
+
 public enum TranslationProviderID: String, CaseIterable, Codable, Sendable {
     case appleSystem
     case deepSeek
@@ -112,6 +118,35 @@ public struct APITranslationProviderProfile: Equatable, Identifiable, Sendable {
     }
 }
 
+public enum VolcengineChatCompletionsMigration {
+    public static let chatCompletionsEndpoint =
+        "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
+    public static let chatCompletionsModel = "doubao-seed-1-6-250615"
+    public static let legacyTranslationModel = "doubao-seed-translation-250915"
+
+    public static func migratedEndpoint(_ stored: String?) -> String {
+        let trimmed = stored?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmed.isEmpty {
+            return chatCompletionsEndpoint
+        }
+        guard let url = URL(string: trimmed),
+              url.path.hasSuffix("/responses"),
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return trimmed
+        }
+        components.path = String(url.path.dropLast("responses".count)) + "chat/completions"
+        return components.string ?? chatCompletionsEndpoint
+    }
+
+    public static func migratedModel(_ stored: String?) -> String {
+        let trimmed = stored?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmed.isEmpty || trimmed == legacyTranslationModel {
+            return chatCompletionsModel
+        }
+        return trimmed
+    }
+}
+
 public enum APITranslationProviderCatalog {
     public static let profiles: [APITranslationProviderProfile] = [
         APITranslationProviderProfile(
@@ -126,8 +161,8 @@ public enum APITranslationProviderCatalog {
         ),
         APITranslationProviderProfile(
             providerID: .volcengine,
-            defaultEndpoint: "https://ark.cn-beijing.volces.com/api/v3/responses",
-            defaultModel: "doubao-seed-translation-250915"
+            defaultEndpoint: VolcengineChatCompletionsMigration.chatCompletionsEndpoint,
+            defaultModel: VolcengineChatCompletionsMigration.chatCompletionsModel
         ),
         APITranslationProviderProfile(
             providerID: .xAI,
@@ -191,11 +226,11 @@ public enum TranslationScene: String, CaseIterable, Codable, Identifiable, Senda
 
     public var displayName: String {
         switch self {
-        case .automatic: "自动判断"
-        case .dailyChat: "日常聊天"
-        case .socialMedia: "X / 社交媒体"
-        case .business: "商务正式"
-        case .faithful: "忠实直译"
+        case .automatic: "自动"
+        case .dailyChat: "聊天"
+        case .socialMedia: "发帖"
+        case .business: "商务"
+        case .faithful: "贴近原文"
         }
     }
 }
@@ -211,11 +246,11 @@ public enum EnglishStyle: String, CaseIterable, Codable, Identifiable, Sendable 
 
     public var displayName: String {
         switch self {
-        case .automatic: "自动 / 中性"
-        case .standardAmerican: "标准美式"
-        case .westCoast: "美国西海岸"
-        case .blackAmerican: "Black American / 街头 AAVE"
-        case .british: "英式英语"
+        case .automatic: "自然"
+        case .standardAmerican: "美国英语"
+        case .westCoast: "轻松美式"
+        case .blackAmerican: "黑人英语"
+        case .british: "英国英语"
         }
     }
 }
@@ -290,17 +325,20 @@ public struct TranslationPreferences: Codable, Equatable, Sendable {
     public var targetLanguage: TranslationLanguage
     public var scene: TranslationScene
     public var englishStyle: EnglishStyle
+    public var interfaceLanguage: InterfaceLanguage
 
     public init(
         providerID: TranslationProviderID = .appleSystem,
         targetLanguage: TranslationLanguage = .english,
         scene: TranslationScene = .automatic,
-        englishStyle: EnglishStyle = .automatic
+        englishStyle: EnglishStyle = .automatic,
+        interfaceLanguage: InterfaceLanguage = .automatic
     ) {
         self.providerID = providerID
         self.targetLanguage = targetLanguage
         self.scene = scene
         self.englishStyle = englishStyle
+        self.interfaceLanguage = interfaceLanguage
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -308,6 +346,7 @@ public struct TranslationPreferences: Codable, Equatable, Sendable {
         case targetLanguage
         case scene
         case englishStyle
+        case interfaceLanguage
     }
 
     public init(from decoder: Decoder) throws {
@@ -327,6 +366,10 @@ public struct TranslationPreferences: Codable, Equatable, Sendable {
         englishStyle = try container.decodeIfPresent(
             EnglishStyle.self,
             forKey: .englishStyle
+        ) ?? .automatic
+        interfaceLanguage = try container.decodeIfPresent(
+            InterfaceLanguage.self,
+            forKey: .interfaceLanguage
         ) ?? .automatic
     }
 }

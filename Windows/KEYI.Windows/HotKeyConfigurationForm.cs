@@ -9,13 +9,15 @@ internal sealed class HotKeyConfigurationForm : Form
     private readonly CheckBox _shift = new() { Text = "Shift", AutoSize = true };
     private readonly CheckBox _win = new() { Text = "Win", AutoSize = true };
     private readonly ComboBox _key = new() { DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly UiStrings _strings;
 
     public HotKeySettings SelectedHotKey { get; private set; }
 
-    public HotKeyConfigurationForm(HotKeySettings current)
+    public HotKeyConfigurationForm(HotKeySettings current, UiStrings strings)
     {
         SelectedHotKey = current;
-        Text = "设置全局快捷键";
+        _strings = strings;
+        Text = strings.HotKeySettings;
         AutoScaleMode = AutoScaleMode.Dpi;
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
@@ -51,7 +53,9 @@ internal sealed class HotKeyConfigurationForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.Controls.Add(new Label
         {
-            Text = "组合键必须包含 Ctrl、Alt 或 Win。",
+            Text = strings.IsEnglish
+                ? "The combination must include Ctrl, Alt, or Win."
+                : "组合键必须包含 Ctrl、Alt 或 Win。",
             AutoSize = true
         });
 
@@ -74,8 +78,8 @@ internal sealed class HotKeyConfigurationForm : Form
             FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false
         };
-        var save = new Button { Text = "保存", AutoSize = true };
-        var cancel = new Button { Text = "取消", AutoSize = true, DialogResult = DialogResult.Cancel };
+        var save = new Button { Text = strings.Save, AutoSize = true };
+        var cancel = new Button { Text = strings.Cancel, AutoSize = true, DialogResult = DialogResult.Cancel };
         save.Click += SaveClicked;
         buttons.Controls.Add(save);
         buttons.Controls.Add(cancel);
@@ -98,8 +102,10 @@ internal sealed class HotKeyConfigurationForm : Form
         {
             MessageBox.Show(
                 this,
-                "快捷键必须包含 Ctrl、Alt 或 Win。",
-                "KEYI 可译",
+                _strings.IsEnglish
+                    ? "The hotkey must include Ctrl, Alt, or Win."
+                    : "快捷键必须包含 Ctrl、Alt 或 Win。",
+                _strings.AppName,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
             return;

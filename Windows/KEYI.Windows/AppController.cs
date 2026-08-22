@@ -13,13 +13,19 @@ internal sealed class AppController : IDisposable
     private readonly NotifyIcon _notifyIcon = new();
     private readonly ContextMenuStrip _menu = new();
     private readonly System.Windows.Forms.Timer _foregroundTimer = new();
-    private readonly ToolStripMenuItem _statusItem = new("就绪") { Enabled = false };
-    private readonly ToolStripMenuItem _providerMenu = new("翻译方式");
-    private readonly ToolStripMenuItem _targetLanguageMenu = new("目标语言");
-    private readonly ToolStripMenuItem _sceneMenu = new("翻译场景");
-    private readonly ToolStripMenuItem _styleMenu = new("英语风格");
-    private readonly ToolStripMenuItem _apiMenu = new("添加/管理模型 API");
+    private readonly ToolStripMenuItem _statusItem = new() { Enabled = false };
+    private readonly ToolStripMenuItem _providerMenu = new();
+    private readonly ToolStripMenuItem _targetLanguageMenu = new();
+    private readonly ToolStripMenuItem _sceneMenu = new();
+    private readonly ToolStripMenuItem _styleMenu = new();
+    private readonly ToolStripMenuItem _interfaceLanguageMenu = new();
+    private readonly ToolStripMenuItem _apiMenu = new();
     private readonly ToolStripMenuItem _hotKeyLabel = new() { Enabled = false };
+    private readonly ToolStripMenuItem _translateItem = new();
+    private readonly ToolStripMenuItem _configureHotKeyItem = new();
+    private readonly ToolStripMenuItem _restoreHotKeyItem = new();
+    private readonly ToolStripMenuItem _checkUpdatesItem = new();
+    private readonly ToolStripMenuItem _exitItem = new();
     private readonly ToolStripMenuItem _styleScopeHint = new()
     {
         Enabled = false,
@@ -27,6 +33,7 @@ internal sealed class AppController : IDisposable
     };
 
     private AppSettings _settings = new();
+    private UiStrings _strings = UiStrings.For(InterfaceLanguage.Automatic);
     private nint _lastExternalWindow;
     private bool _busy;
     private bool _disposed;
@@ -34,10 +41,12 @@ internal sealed class AppController : IDisposable
     public void Initialize()
     {
         _settings = _settingsStore.Load();
+        UiStrings.SetCurrent(_settings.InterfaceLanguage);
+        _strings = UiStrings.For(_settings.InterfaceLanguage);
         BuildMenu();
 
         _notifyIcon.Icon = SystemIcons.Information;
-        _notifyIcon.Text = "KEYI 可译 - 就绪";
+        _notifyIcon.Text = $"{_strings.AppName} - {_strings.Ready}";
         _notifyIcon.ContextMenuStrip = _menu;
         _notifyIcon.Visible = true;
         _notifyIcon.DoubleClick += async (_, _) => await TranslateFromTrayAsync();
@@ -53,8 +62,8 @@ internal sealed class AppController : IDisposable
         if (!_credentials.HasSecret(_settings.SelectedProvider))
         {
             ShowBalloon(
-                "需要配置模型 API",
-                $"请右键 KEYI 可译托盘图标，配置 {ProviderCatalog.Get(_settings.SelectedProvider).DisplayName} API。",
+                _strings.ApiRequiredTitle,
+                _strings.ConfigureApiHint(_settings.SelectedProvider),
                 ToolTipIcon.Info);
         }
     }
@@ -64,13 +73,13 @@ internal sealed class AppController : IDisposable
         _menu.Items.Add(_statusItem);
         _menu.Items.Add(new ToolStripSeparator());
 
-        var translate = new ToolStripMenuItem("翻译当前输入框");
-        translate.Click += async (_, _) => await TranslateFromTrayAsync();
-        _menu.Items.Add(translate);
+        _translateItem.Text = _strings.TranslateCurrentInput;
+        _translateItem.Click += async (_, _) => await TranslateFromTrayAsync();
+        _menu.Items.Add(_translateItem);
 
         foreach (var provider in ProviderCatalog.All)
         {
-            var providerItem = new ToolStripMenuItem(provider.DisplayName)
+            var providerItem = new ToolStripMenuItem(_strings.ProviderName(provider.Id))
             {
                 Tag = provider.Id,
                 CheckOnClick = false
@@ -78,7 +87,7 @@ internal sealed class AppController : IDisposable
             providerItem.Click += (_, _) => SelectProvider(provider.Id);
             _providerMenu.DropDownItems.Add(providerItem);
 
-            var apiItem = new ToolStripMenuItem(provider.DisplayName)
+            var apiItem = new ToolStripMenuItem(_strings.ProviderName(provider.Id))
             {
                 Tag = provider.Id
             };
@@ -88,7 +97,7 @@ internal sealed class AppController : IDisposable
 
         foreach (var scene in Enum.GetValues<TranslationScene>())
         {
-            var item = new ToolStripMenuItem(scene.DisplayName()) { Tag = scene };
+            var item = new ToolStripMenuItem(_strings.SceneName(scene)) { Tag = scene };
             item.Click += (_, _) => ApplyPreference(
                 () => _settings.Scene,
                 value => _settings.Scene = value,
@@ -98,7 +107,7 @@ internal sealed class AppController : IDisposable
 
         foreach (var language in Enum.GetValues<TranslationLanguage>())
         {
-            var item = new ToolStripMenuItem(language.DisplayName()) { Tag = language };
+            var item = new ToolStripMenuItem(_strings.LanguageName(language)) { Tag = language };
             item.Click += (_, _) =>
             {
                 if (_busy)
@@ -115,7 +124,7 @@ internal sealed class AppController : IDisposable
 
         foreach (var style in Enum.GetValues<EnglishStyle>())
         {
-            var item = new ToolStripMenuItem(style.DisplayName()) { Tag = style };
+            var item = new ToolStripMenuItem(_strings.StyleName(style)) { Tag = style };
             item.Click += (_, _) => ApplyPreference(
                 () => _settings.EnglishStyle,
                 value => _settings.EnglishStyle = value,
@@ -128,36 +137,69 @@ internal sealed class AppController : IDisposable
         _menu.Items.Add(_sceneMenu);
         _menu.Items.Add(_styleMenu);
         _menu.Items.Add(_styleScopeHint);
+        BuildInterfaceLanguageMenu();
+        _menu.Items.Add(_interfaceLanguageMenu);
         _menu.Items.Add(_apiMenu);
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(_hotKeyLabel);
 
-        var configureHotKey = new ToolStripMenuItem("设置快捷键...");
-        configureHotKey.Click += (_, _) => ConfigureHotKey();
-        _menu.Items.Add(configureHotKey);
+        _configureHotKeyItem.Text = _strings.HotKeySettings;
+        _configureHotKeyItem.Click += (_, _) => ConfigureHotKey();
+        _menu.Items.Add(_configureHotKeyItem);
 
-        var restoreHotKey = new ToolStripMenuItem("恢复默认快捷键");
-        restoreHotKey.Click += (_, _) => ApplyHotKey(new HotKeySettings());
-        _menu.Items.Add(restoreHotKey);
+        _restoreHotKeyItem.Text = _strings.RestoreDefault;
+        _restoreHotKeyItem.Click += (_, _) => ApplyHotKey(new HotKeySettings());
+        _menu.Items.Add(_restoreHotKeyItem);
         _menu.Items.Add(new ToolStripSeparator());
 
-        var checkForUpdates = new ToolStripMenuItem("版本与发布说明");
-        checkForUpdates.Click += (_, _) => ShowReleaseInformation();
-        _menu.Items.Add(checkForUpdates);
+        _checkUpdatesItem.Text = _strings.CheckUpdates;
+        _checkUpdatesItem.Click += (_, _) => ShowReleaseInformation();
+        _menu.Items.Add(_checkUpdatesItem);
 
-        var exit = new ToolStripMenuItem("退出 KEYI 可译");
-        exit.Click += (_, _) => Application.ExitThread();
-        _menu.Items.Add(exit);
+        _exitItem.Text = _strings.Exit;
+        _exitItem.Click += (_, _) => Application.ExitThread();
+        _menu.Items.Add(_exitItem);
 
         _menu.Opening += (_, _) => UpdateMenuChecks();
         UpdateMenuChecks();
+    }
+
+    private void BuildInterfaceLanguageMenu()
+    {
+        _interfaceLanguageMenu.Text = _strings.InterfaceLanguageValue(
+            _settings.InterfaceLanguage);
+        foreach (var language in Enum.GetValues<InterfaceLanguage>())
+        {
+            var item = new ToolStripMenuItem(_strings.InterfaceLanguageName(language))
+            {
+                Tag = language
+            };
+            item.Click += (_, _) => SelectInterfaceLanguage(language);
+            _interfaceLanguageMenu.DropDownItems.Add(item);
+        }
+    }
+
+    private void SelectInterfaceLanguage(InterfaceLanguage language)
+    {
+        var previous = _settings.InterfaceLanguage;
+        _settings.InterfaceLanguage = language;
+        if (!SaveSettings())
+        {
+            _settings.InterfaceLanguage = previous;
+            return;
+        }
+
+        _strings = UiStrings.For(language);
+        UiStrings.SetCurrent(language);
+        UpdateMenuChecks();
+        SetStatus(_strings.InterfaceLanguageUpdated);
     }
 
     private async Task TranslateFromTrayAsync()
     {
         if (_lastExternalWindow == nint.Zero || !NativeMethods.IsWindow(_lastExternalWindow))
         {
-            ShowError("没有找到最近使用的输入窗口");
+            ShowError(_strings.NoFocusedWindow);
             return;
         }
         NativeMethods.SetForegroundWindow(_lastExternalWindow);
@@ -179,20 +221,20 @@ internal sealed class AppController : IDisposable
             var apiKey = _credentials.Read(provider.Id);
             if (string.IsNullOrWhiteSpace(apiKey))
             {
-                SetStatus($"请先配置 {provider.DisplayName} API");
+                SetStatus(_strings.ConfigureProviderFirst(provider.Id));
                 ConfigureProvider(provider.Id);
                 return;
             }
 
-            SetStatus("正在读取当前输入框");
+            SetStatus(_strings.ReadingInput);
             var snapshot = await _focusedText.CaptureAsync();
             var providerSettings = _settings.Providers[provider.Id];
             if (!Uri.TryCreate(providerSettings.Endpoint, UriKind.Absolute, out var endpoint))
             {
-                throw new TranslationException("Endpoint 必须是有效的 HTTPS 地址");
+                throw new TranslationException(_strings.InvalidEndpoint);
             }
 
-            SetStatus($"正在使用 {provider.DisplayName} 翻译");
+            SetStatus(_strings.UsingProvider(provider.Id));
             var client = new OpenAiTranslationClient(_httpClient);
             var translated = await client.TranslateAsync(
                 new TextTranslationRequest(
@@ -207,9 +249,9 @@ internal sealed class AppController : IDisposable
                     endpoint,
                     providerSettings.Model));
 
-            SetStatus("正在写回当前输入框");
+            SetStatus(_strings.WritingInput);
             await _focusedText.ReplaceAsync(snapshot, translated);
-            SetStatus("翻译完成");
+            SetStatus(_strings.TranslationComplete);
         }
         catch (Exception exception)
         {
@@ -236,7 +278,7 @@ internal sealed class AppController : IDisposable
             return;
         }
         UpdateMenuChecks();
-        SetStatus($"已选择 {ProviderCatalog.Get(providerId).DisplayName}");
+        SetStatus(_strings.SelectedProvider(providerId));
     }
 
     private bool ConfigureProvider(ProviderId providerId)
@@ -246,7 +288,8 @@ internal sealed class AppController : IDisposable
         using var form = new ProviderConfigurationForm(
             provider,
             _settings.Providers[providerId],
-            hasStoredKey);
+            hasStoredKey,
+            _strings);
         if (form.ShowDialog() != DialogResult.OK)
         {
             return false;
@@ -260,7 +303,7 @@ internal sealed class AppController : IDisposable
             }
             if (!_credentials.HasSecret(providerId))
             {
-                throw new InvalidOperationException("API Key 不能为空");
+                throw new InvalidOperationException(_strings.MissingApiKey);
             }
             var previousSettings = _settings.Providers[providerId];
             _settings.Providers[providerId] = new ProviderSettings
@@ -275,14 +318,14 @@ internal sealed class AppController : IDisposable
                 return false;
             }
             UpdateMenuChecks();
-            SetStatus($"已保存 {provider.DisplayName} API");
+            SetStatus(_strings.SavedProvider(providerId));
             return true;
         }
         catch (Exception exception)
         {
             MessageBox.Show(
                 UserMessage(exception),
-                "KEYI 可译",
+                _strings.AppName,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
             return false;
@@ -291,7 +334,7 @@ internal sealed class AppController : IDisposable
 
     private void ConfigureHotKey()
     {
-        using var form = new HotKeyConfigurationForm(_settings.HotKey);
+        using var form = new HotKeyConfigurationForm(_settings.HotKey, _strings);
         if (form.ShowDialog() == DialogResult.OK)
         {
             ApplyHotKey(form.SelectedHotKey);
@@ -303,8 +346,8 @@ internal sealed class AppController : IDisposable
         if (!_hotKey.TryReplace(settings))
         {
             MessageBox.Show(
-                $"快捷键 {HotKeyDisplay(settings)} 无法注册，可能已被其他应用占用。",
-                "KEYI 可译",
+                _strings.HotKeyUnavailable(HotKeyDisplay(settings)),
+                _strings.AppName,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
             return;
@@ -316,20 +359,22 @@ internal sealed class AppController : IDisposable
             _settings.HotKey = previousSettings;
             if (!_hotKey.TryReplace(previousSettings))
             {
-                ShowError("保存快捷键失败，且原快捷键恢复失败，请重新设置");
+                ShowError(_strings.SaveHotKeyFailed);
             }
             UpdateMenuChecks();
             return;
         }
         UpdateMenuChecks();
-        SetStatus($"快捷键已更新为 {HotKeyDisplay(settings)}");
+        SetStatus(_strings.HotKeyUpdated(HotKeyDisplay(settings)));
     }
 
     private void ShowReleaseInformation()
     {
         MessageBox.Show(
-            "当前 Release 提供未签名的 Windows 实验二进制，不包含自动更新；SmartScreen 可能显示警告，正式原生验收尚未完成。",
-            "KEYI 可译",
+            _strings.IsEnglish
+                ? "The current release includes an unsigned Windows experimental binary without auto-update. SmartScreen may warn, and native acceptance is not complete."
+                : "当前 Release 提供未签名的 Windows 实验二进制，不包含自动更新；SmartScreen 可能显示警告，正式原生验收尚未完成。",
+            _strings.AppName,
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
     }
@@ -347,12 +392,12 @@ internal sealed class AppController : IDisposable
             _settings.HotKey = fallback;
             if (SaveSettings())
             {
-                SetStatus("原快捷键不可用，已恢复 Alt+T");
+                SetStatus(_strings.FallbackHotKey("Alt+T"));
             }
         }
         else
         {
-            ShowError("全局快捷键注册失败，请从托盘菜单重新设置");
+            ShowError(_strings.HotKeyRegistrationFailed);
         }
     }
 
@@ -362,9 +407,10 @@ internal sealed class AppController : IDisposable
         {
             var providerId = (ProviderId)item.Tag!;
             item.Checked = providerId == _settings.SelectedProvider;
+            var providerName = _strings.ProviderName(providerId);
             item.Text = _credentials.HasSecret(providerId)
-                ? ProviderCatalog.Get(providerId).DisplayName
-                : $"{ProviderCatalog.Get(providerId).DisplayName}（未配置）";
+                ? providerName
+                : _strings.ProviderNotConfigured(providerId);
         }
         foreach (ToolStripMenuItem item in _sceneMenu.DropDownItems)
         {
@@ -381,25 +427,35 @@ internal sealed class AppController : IDisposable
         foreach (ToolStripMenuItem item in _apiMenu.DropDownItems)
         {
             var providerId = (ProviderId)item.Tag!;
+            var providerName = _strings.ProviderName(providerId);
             item.Text = _credentials.HasSecret(providerId)
-                ? $"{ProviderCatalog.Get(providerId).DisplayName} ✓"
-                : ProviderCatalog.Get(providerId).DisplayName;
+                ? $"{providerName} ✓"
+                : providerName;
         }
 
-        _providerMenu.Text = $"翻译方式：{ProviderCatalog.Get(_settings.SelectedProvider).DisplayName}";
-        _targetLanguageMenu.Text = $"目标语言：{_settings.TargetLanguage.DisplayName()}";
+        _providerMenu.Text = _strings.CurrentProvider(_settings.SelectedProvider);
+        _targetLanguageMenu.Text = _strings.Target(_settings.TargetLanguage);
         _targetLanguageMenu.Enabled = !_busy;
-        _sceneMenu.Text = $"翻译场景：{_settings.Scene.DisplayName()}";
-        _styleMenu.Text = $"英语风格：{_settings.EnglishStyle.DisplayName()}";
+        _sceneMenu.Text = _strings.SceneValue(_settings.Scene);
+        _styleMenu.Text = _strings.StyleValue(_settings.EnglishStyle);
         var styleEnabled = TranslationPromptBuilder.UsesEnglishStyle(
             _settings.TargetLanguage,
             _settings.Scene);
         _styleMenu.Enabled = styleEnabled;
         _styleScopeHint.Visible = !styleEnabled;
-        _styleScopeHint.Text = _settings.Scene == TranslationScene.Business
-            ? "商务场景优先准确表达，不使用英语风格"
-            : "翻译场景适用于全部目标语言；英语风格仅适用于英语";
-        _hotKeyLabel.Text = $"快捷键  {HotKeyDisplay(_settings.HotKey)}";
+        _styleScopeHint.Text = _strings.SceneStyleHint(
+            supportsScene: true,
+            supportsStyle: styleEnabled,
+            scene: _settings.Scene);
+        _interfaceLanguageMenu.Text = _strings.InterfaceLanguageValue(
+            _settings.InterfaceLanguage);
+        foreach (ToolStripMenuItem item in _interfaceLanguageMenu.DropDownItems)
+        {
+            var language = (InterfaceLanguage)item.Tag!;
+            item.Checked = language == _settings.InterfaceLanguage;
+            item.Text = _strings.InterfaceLanguageName(language);
+        }
+        _hotKeyLabel.Text = $"{_strings.HotKey}  {HotKeyDisplay(_settings.HotKey)}";
     }
 
     private void TrackForegroundWindow()
@@ -439,7 +495,7 @@ internal sealed class AppController : IDisposable
         }
         catch (Exception exception)
         {
-            ShowError($"保存设置失败：{UserMessage(exception)}");
+            ShowError(_strings.SaveSettingsFailed(UserMessage(exception)));
             return false;
         }
     }
@@ -447,13 +503,15 @@ internal sealed class AppController : IDisposable
     private void SetStatus(string message)
     {
         _statusItem.Text = message;
-        _notifyIcon.Text = message.Length <= 55 ? $"KEYI 可译 - {message}" : "KEYI 可译";
+        _notifyIcon.Text = message.Length <= 55
+            ? $"{_strings.AppName} - {message}"
+            : _strings.AppName;
     }
 
     private void ShowError(string message)
     {
         SetStatus(message);
-        ShowBalloon("KEYI 可译", message, ToolTipIcon.Warning);
+        ShowBalloon(_strings.AppName, message, ToolTipIcon.Warning);
     }
 
     private void ShowBalloon(string title, string message, ToolTipIcon icon)
@@ -464,11 +522,11 @@ internal sealed class AppController : IDisposable
         _notifyIcon.ShowBalloonTip(3500);
     }
 
-    private static string UserMessage(Exception exception) => exception switch
+    private string UserMessage(Exception exception) => exception switch
     {
-        OperationCanceledException => "翻译请求超时或已取消",
+        OperationCanceledException => _strings.TimeoutOrCancelled,
         _ when !string.IsNullOrWhiteSpace(exception.Message) => exception.Message,
-        _ => "操作失败"
+        _ => _strings.OperationFailed
     };
 
     private static string HotKeyDisplay(HotKeySettings settings)

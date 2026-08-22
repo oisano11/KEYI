@@ -10,6 +10,7 @@ final class TopStatusOverlayController {
     private let imageView: NSImageView
     private let label: NSTextField
     private var stateObserver: AnyCancellable?
+    private var languageObserver: AnyCancellable?
     private var hideTask: Task<Void, Never>?
 
     init(model: AppModel) {
@@ -32,6 +33,11 @@ final class TopStatusOverlayController {
             .removeDuplicates()
             .sink { [weak self] state in
                 self?.render(state)
+            }
+        languageObserver = model.$interfaceLanguage
+            .sink { [weak self, weak model] _ in
+                guard let self, let model else { return }
+                self.render(model.state)
             }
     }
 
@@ -105,19 +111,19 @@ final class TopStatusOverlayController {
         case .ready:
             hide()
         case .preparing:
-            showProgress(text: "正在准备翻译…")
+            showProgress(text: "\(InterfaceStrings.current.statusPreparing)…")
         case .translating:
-            showProgress(text: "正在翻译…")
+            showProgress(text: "\(InterfaceStrings.current.statusTranslating)…")
         case .success:
             showResult(
-                text: "翻译完成",
+                text: InterfaceStrings.current.statusSuccess,
                 symbolName: "checkmark.circle.fill",
                 color: .systemGreen,
                 hideAfter: .seconds(2)
             )
         case .permissionRequired:
             showResult(
-                text: "需要辅助功能权限",
+                text: InterfaceStrings.current.statusPermissionRequired,
                 symbolName: "lock.fill",
                 color: .systemYellow,
                 hideAfter: .seconds(4)

@@ -13,11 +13,12 @@ final class GlobalHotKey {
         case hotKeyRegistrationFailed(OSStatus, String)
 
         var errorDescription: String? {
-            switch self {
+            let strings = InterfaceStrings.current
+            return switch self {
             case let .handlerRegistrationFailed(status):
-                "快捷键监听初始化失败（\(status)）"
+                strings.hotKeyListenerError(status)
             case let .hotKeyRegistrationFailed(status, displayName):
-                "快捷键 \(displayName) 无法注册，可能已被占用（\(status)）"
+                strings.hotKeyConflict(displayName, status: status)
             }
         }
     }

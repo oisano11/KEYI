@@ -10,7 +10,9 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("settings round trip", CheckSettingsRoundTrip),
     ("prompt payload escaping", CheckPromptPayload),
     ("successful API request", CheckSuccessfulRequest),
-    ("volcengine responses request", CheckVolcengineResponsesRequest),
+    ("volcengine chat completions request", CheckVolcengineChatCompletionsRequest),
+    ("volcengine settings migration", CheckVolcengineSettingsMigration),
+    ("interface labels", CheckInterfaceLabels),
     ("API error details", CheckApiError),
     ("HTTPS validation", CheckHttpsValidation),
     ("legacy settings file migration", CheckLegacySettingsFileMigration),
@@ -30,11 +32,11 @@ static Task CheckProviderDefaults()
     Assert(ProviderCatalog.Get(ProviderId.DeepSeek).DefaultModel == "deepseek-chat", "DeepSeek model");
     Assert(ProviderCatalog.Get(ProviderId.XAI).DefaultEndpoint == "https://api.x.ai/v1/chat/completions", "xAI endpoint");
     Assert(
-        ProviderCatalog.Get(ProviderId.Volcengine).DefaultEndpoint == "https://ark.cn-beijing.volces.com/api/v3/responses",
-        "volcengine responses endpoint matches macOS");
+        ProviderCatalog.Get(ProviderId.Volcengine).DefaultEndpoint == "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+        "volcengine chat completions endpoint matches macOS");
     Assert(
-        ProviderCatalog.Get(ProviderId.Volcengine).DefaultModel == "doubao-seed-translation-250915",
-        "volcengine translation model matches macOS");
+        ProviderCatalog.Get(ProviderId.Volcengine).DefaultModel == "doubao-seed-1-6-250615",
+        "volcengine chat completions model matches macOS");
     Assert(ProviderCatalog.All.All(provider => provider.DefaultEndpoint.StartsWith("https://", StringComparison.Ordinal)), "HTTPS defaults");
     return Task.CompletedTask;
 }
@@ -132,14 +134,13 @@ static async Task CheckSuccessfulRequest()
     Assert(!payloadDocument.RootElement.TryGetProperty("full_input_context", out _), "request must not include full input context");
 }
 
-static async Task CheckVolcengineResponsesRequest()
+static async Task CheckVolcengineChatCompletionsRequest()
 {
     string? capturedBody = null;
     using var http = new HttpClient(new StubHandler(async request =>
     {
         capturedBody = await request.Content!.ReadAsStringAsync();
-        return JsonResponse(HttpStatusCode.OK,
-            "{\"output\":[{\"content\":[{\"type\":\"output_text\",\"text\":\"  こんにちは。  \"}]}]}");
+        return JsonResponse(HttpStatusCode.OK, "{\"choices\":[{\"message\":{\"content\":\"  こんにちは。  \"}}]}");
     }));
     var client = new OpenAiTranslationClient(http);
     var result = await client.TranslateAsync(
@@ -152,18 +153,60 @@ static async Task CheckVolcengineResponsesRequest()
         new ApiProviderConfiguration(
             ProviderId.Volcengine,
             "test-secret",
-            new Uri("https://ark.cn-beijing.volces.com/api/v3/responses"),
-            "doubao-seed-translation-250915"));
+            new Uri("https://ark.cn-beijing.volces.com/api/v3/chat/completions"),
+            "doubao-seed-1-6-250615"));
 
-    Assert(result == "こんにちは。", "responses result trimmed");
+    Assert(result == "こんにちは。", "chat completions result trimmed");
     using var document = JsonDocument.Parse(capturedBody!);
-    Assert(!document.RootElement.TryGetProperty("messages", out _), "responses payload has no chat messages");
-    var content = document.RootElement.GetProperty("input")[0].GetProperty("content")[0];
-    Assert(content.GetProperty("type").GetString() == "input_text", "responses input_text");
-    Assert(content.GetProperty("text").GetString() == "你好", "responses source text");
-    var options = content.GetProperty("translation_options");
-    Assert(options.GetProperty("source_language").GetString() == "zh", "responses source language");
-    Assert(options.GetProperty("target_language").GetString() == "ja", "responses target language");
+    var messages = document.RootElement.GetProperty("messages");
+    Assert(messages.GetArrayLength() == 2, "chat completions payload has messages");
+    var userContent = messages[1].GetProperty("content").GetString()!;
+    using var payload = JsonDocument.Parse(userContent[userContent.IndexOf('{')..]);
+    Assert(payload.RootElement.GetProperty("source_text").GetString() == "你好", "chat completions source text");
+    Assert(!payload.RootElement.TryGetProperty("full_input_context", out _), "chat completions must not include full input context");
+}
+
+static Task CheckVolcengineSettingsMigration()
+{
+    var settings = new AppSettings();
+    settings.EnsureDefaults();
+    settings.Providers[ProviderId.Volcengine] = new ProviderSettings
+    {
+        Endpoint = "https://ark.cn-beijing.volces.com/api/v3/responses",
+        Model = "doubao-seed-translation-250915"
+    };
+    settings.EnsureDefaults();
+    Assert(
+        settings.Providers[ProviderId.Volcengine].Endpoint == "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+        "legacy volcengine endpoint migrates");
+    Assert(
+        settings.Providers[ProviderId.Volcengine].Model == "doubao-seed-1-6-250615",
+        "legacy volcengine model migrates");
+    return Task.CompletedTask;
+}
+
+static Task CheckInterfaceLabels()
+{
+    Assert(TranslationScene.DailyChat.DisplayName() == "聊天", "daily chat label");
+    Assert(TranslationScene.SocialMedia.DisplayName() == "发帖", "social label");
+    Assert(TranslationScene.Faithful.DisplayName() == "贴近原文", "faithful label");
+    Assert(EnglishStyle.Automatic.DisplayName() == "自然", "natural tone label");
+    Assert(EnglishStyle.BlackAmerican.DisplayName() == "黑人英语", "black american label");
+    Assert(
+        !TranslationPromptBuilder.UsesEnglishStyle(TranslationLanguage.Japanese, TranslationScene.DailyChat),
+        "tone disabled for non-English");
+    Assert(
+        !TranslationPromptBuilder.UsesEnglishStyle(TranslationLanguage.English, TranslationScene.Faithful),
+        "tone disabled for faithful");
+    var prompt = TranslationPromptBuilder.SystemPrompt(new TextTranslationRequest(
+        "兄弟，这也太离谱了",
+        null,
+        TranslationLanguage.English,
+        TranslationScene.SocialMedia,
+        EnglishStyle.BlackAmerican));
+    Assert(prompt.Contains("not a slang quota", StringComparison.Ordinal), "black american is not a slang quota");
+    Assert(!prompt.Contains("finna", StringComparison.Ordinal), "black american must not force slang");
+    return Task.CompletedTask;
 }
 
 static async Task CheckApiError()

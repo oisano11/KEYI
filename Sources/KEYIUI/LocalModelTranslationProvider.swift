@@ -177,24 +177,22 @@ enum LocalModelTranslationError: LocalizedError {
     case httpFailure(statusCode: Int, message: String?)
 
     var errorDescription: String? {
-        switch self {
+        let strings = InterfaceStrings.current
+        return switch self {
         case .emptySource:
-            return "没有可翻译的文本"
+            strings.emptySource
         case .serviceUnavailable:
-            return "本地 Gemma 4 服务未启动，请确认 LM Studio 可用"
+            strings.localModelServiceUnavailable
         case .timeout:
-            return "本地 Gemma 4 首次加载或翻译超时"
+            strings.localModelTimeout
         case .invalidResponse:
-            return "本地 Gemma 4 返回了无效响应"
+            strings.localModelInvalidResponse
         case .emptyResponse:
-            return "本地 Gemma 4 没有返回翻译结果"
+            strings.localModelEmptyResponse
         case .outputBudgetExhausted:
-            return "本地 Gemma 4 输出过长，自动重试后仍未生成完整译文"
+            strings.localModelOutputTooLong
         case let .httpFailure(statusCode, message):
-            if let message, !message.isEmpty {
-                return "本地 Gemma 4 请求失败（\(statusCode)：\(message)）"
-            }
-            return "本地 Gemma 4 请求失败（HTTP \(statusCode)，模型可能未加载）"
+            strings.localModelRequestFailed(statusCode, detail: message)
         }
     }
 }

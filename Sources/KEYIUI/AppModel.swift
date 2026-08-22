@@ -16,13 +16,13 @@ final class AppModel: ObservableObject {
         case success
         case failure(String)
 
-        var title: String {
+        func title(using strings: InterfaceStrings) -> String {
             switch self {
-            case .ready: "就绪"
-            case .permissionRequired: "需要辅助功能权限"
-            case .preparing: "正在准备翻译资源"
-            case .translating: "正在翻译"
-            case .success: "翻译完成"
+            case .ready: strings.statusReady
+            case .permissionRequired: strings.statusPermissionRequired
+            case .preparing: strings.statusPreparing
+            case .translating: strings.statusTranslating
+            case .success: strings.statusSuccess
             case let .failure(message): message
             }
         }
@@ -58,6 +58,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var selectedTargetLanguage: TranslationLanguage
     @Published private(set) var selectedScene: TranslationScene
     @Published private(set) var selectedEnglishStyle: EnglishStyle
+    @Published private(set) var interfaceLanguage: InterfaceLanguage
     @Published private(set) var configuredAPIProviderIDs: Set<TranslationProviderID>
     @Published private(set) var hotKeyConfiguration: HotKeyConfiguration
     @Published private(set) var localModelEndpoint: String
@@ -84,6 +85,7 @@ final class AppModel: ObservableObject {
         self.selectedTargetLanguage = settings.preferences.targetLanguage
         self.selectedScene = settings.preferences.scene
         self.selectedEnglishStyle = settings.preferences.englishStyle
+        self.interfaceLanguage = settings.preferences.interfaceLanguage
         self.hotKeyConfiguration = hotKeySettings.configuration
         self.localModelEndpoint = settings.localModelEndpoint()
         self.localModelName = settings.localModelName()
@@ -102,7 +104,11 @@ final class AppModel: ObservableObject {
     }
 
     var selectedProviderName: String {
-        TranslationProviderCatalog.descriptor(for: selectedProviderID).name
+        strings.providerName(selectedProviderID)
+    }
+
+    var strings: InterfaceStrings {
+        InterfaceStrings(language: interfaceLanguage)
     }
 
     var apiProviderProfiles: [APITranslationProviderProfile] {
@@ -139,6 +145,12 @@ final class AppModel: ObservableObject {
     func selectEnglishStyle(_ englishStyle: EnglishStyle) {
         settings.selectEnglishStyle(englishStyle)
         selectedEnglishStyle = englishStyle
+    }
+
+    func selectInterfaceLanguage(_ language: InterfaceLanguage) {
+        guard language != interfaceLanguage else { return }
+        settings.selectInterfaceLanguage(language)
+        interfaceLanguage = language
     }
 
     func setHotKeyRegistrationHandler(
@@ -194,14 +206,14 @@ final class AppModel: ObservableObject {
         guard APITranslationProviderCatalog.profile(
             for: providerID
         ) != nil else {
-            showError("当前提供方不支持 API 配置")
+            showError(strings.unsupportedProvider)
             return false
         }
 
         let apiKeyField = NSSecureTextField()
         apiKeyField.placeholderString = isAPIConfigured(providerID)
-            ? "已保存，留空保持不变"
-            : "粘贴 API Key"
+            ? strings.savedLeaveBlank
+            : strings.pasteAPIKey
         let endpointField = NSTextField()
         endpointField.placeholderString = "https://example.com/v1/chat/completions"
         endpointField.stringValue = settings.endpoint(for: providerID) ?? ""
@@ -209,12 +221,12 @@ final class AppModel: ObservableObject {
         modelField.stringValue = settings.model(for: providerID) ?? ""
 
         guard presentConfigurationForm(
-            title: "配置 \(providerID.displayName) API",
-            informativeText: "API Key 仅保存到当前 macOS 用户的钥匙串；Endpoint 和模型名保存到本机设置。",
+            title: strings.configureAPI(providerID),
+            informativeText: strings.apiStorageInfo,
             fields: [
-                ("API Key", apiKeyField),
-                ("Endpoint", endpointField),
-                ("模型", modelField)
+                (strings.apiKey, apiKeyField),
+                (strings.endpoint, endpointField),
+                (strings.model, modelField)
             ],
             initialFocus: apiKeyField
         ) else { return false }
@@ -232,7 +244,7 @@ final class AppModel: ObservableObject {
             if state.isFailure { state = .ready }
             return true
         } catch {
-            showError("保存 \(providerID.displayName) API 失败：\(error.localizedDescription)")
+            showError(strings.saveAPIFailed(providerID, detail: error.localizedDescription))
             return false
         }
     }
@@ -243,11 +255,11 @@ final class AppModel: ObservableObject {
         let modelField = NSTextField(string: localModelName)
 
         guard presentConfigurationForm(
-            title: "配置本地 Gemma 4",
-            informativeText: "无需 API Key。首次翻译会自动加载 12B 模型；闲置 3 分钟后自动卸载并释放内存。",
+            title: strings.configureLocalModel,
+            informativeText: strings.localModelInfo,
             fields: [
-                ("Endpoint", endpointField),
-                ("模型", modelField)
+                (strings.endpoint, endpointField),
+                (strings.model, modelField)
             ],
             initialFocus: endpointField
         ) else { return false }
@@ -264,7 +276,7 @@ final class AppModel: ObservableObject {
             if state.isFailure { state = .ready }
             return true
         } catch {
-            showError("保存本地 Gemma 4 配置失败：\(error.localizedDescription)")
+            showError("\(strings.saveLocalModelFailedPrefix)\(error.localizedDescription)")
             return false
         }
     }
@@ -307,8 +319,8 @@ final class AppModel: ObservableObject {
         grid.autoresizingMask = [.width, .height]
         formContainer.addSubview(grid)
         alert.accessoryView = formContainer
-        alert.addButton(withTitle: "保存")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: strings.save)
+        alert.addButton(withTitle: strings.cancel)
         alert.window.initialFirstResponder = initialFocus
         return alert.runModal() == .alertFirstButtonReturn
     }
@@ -358,7 +370,7 @@ final class AppModel: ObservableObject {
         }
         if selectedProviderID.requiresAPIConfiguration,
            !isAPIConfigured(selectedProviderID) {
-            showError("请先配置 \(selectedProviderName) API")
+            showError(strings.configureProviderFirst(selectedProviderName))
             return
         }
         logger.info("Translation requested; trusted=\(self.accessibility.isTrusted)")
@@ -523,7 +535,7 @@ final class AppModel: ObservableObject {
             state = .ready
         } else {
             logger.error("Translation failed: \(error.localizedDescription, privacy: .private)")
-            showError("翻译失败：\(error.localizedDescription)")
+            showError(strings.translationFailed(error.localizedDescription))
         }
     }
 

@@ -24,40 +24,24 @@ public sealed class OpenAiTranslationClient
         }
         ValidateConfiguration(configuration);
 
-        // 与 macOS 端一致：火山引擎默认走 Ark /responses 翻译接口；
-        // 用户自填 chat/completions 端点时退回通用 Chat 请求。
-        var usesVolcengineResponsesApi = configuration.ProviderId == ProviderId.Volcengine
-            && configuration.Endpoint.AbsolutePath.EndsWith("/responses", StringComparison.Ordinal);
-
-        string body;
-        if (usesVolcengineResponsesApi)
+        var body = JsonSerializer.Serialize(new
         {
-            body = VolcengineResponsesApi.BuildRequestBody(
-                configuration.Model,
-                request.SourceText,
-                request.TargetLanguage.LanguageCode());
-        }
-        else
-        {
-            body = JsonSerializer.Serialize(new
+            model = configuration.Model,
+            messages = new[]
             {
-                model = configuration.Model,
-                messages = new[]
+                new
                 {
-                    new
-                    {
-                        role = "system",
-                        content = TranslationPromptBuilder.SystemPrompt(request)
-                    },
-                    new
-                    {
-                        role = "user",
-                        content = TranslationPromptBuilder.UserPrompt(request)
-                    }
+                    role = "system",
+                    content = TranslationPromptBuilder.SystemPrompt(request)
                 },
-                temperature = request.Scene == TranslationScene.Faithful ? 0 : 0.2
-            });
-        }
+                new
+                {
+                    role = "user",
+                    content = TranslationPromptBuilder.UserPrompt(request)
+                }
+            },
+            temperature = request.Scene == TranslationScene.Faithful ? 0 : 0.2
+        });
 
         using var message = new HttpRequestMessage(HttpMethod.Post, configuration.Endpoint)
         {
@@ -83,21 +67,13 @@ public sealed class OpenAiTranslationClient
 
         try
         {
-            string? content;
-            if (usesVolcengineResponsesApi)
-            {
-                content = VolcengineResponsesApi.ReadTranslatedText(responseBody);
-            }
-            else
-            {
-                using var document = JsonDocument.Parse(responseBody);
-                content = document.RootElement
-                    .GetProperty("choices")[0]
-                    .GetProperty("message")
-                    .GetProperty("content")
-                    .GetString()
-                    ?.Trim();
-            }
+            using var document = JsonDocument.Parse(responseBody);
+            var content = document.RootElement
+                .GetProperty("choices")[0]
+                .GetProperty("message")
+                .GetProperty("content")
+                .GetString()
+                ?.Trim();
             if (string.IsNullOrEmpty(content))
             {
                 throw new TranslationException("模型 API 没有返回翻译结果");

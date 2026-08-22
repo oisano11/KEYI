@@ -8,6 +8,7 @@ internal sealed class ProviderConfigurationForm : Form
     private readonly TextBox _endpoint = new();
     private readonly TextBox _model = new();
     private readonly bool _hasStoredKey;
+    private readonly UiStrings _strings;
 
     public string ApiKey => _apiKey.Text.Trim();
     public string Endpoint => _endpoint.Text.Trim();
@@ -16,10 +17,12 @@ internal sealed class ProviderConfigurationForm : Form
     public ProviderConfigurationForm(
         ProviderDefinition provider,
         ProviderSettings settings,
-        bool hasStoredKey)
+        bool hasStoredKey,
+        UiStrings strings)
     {
         _hasStoredKey = hasStoredKey;
-        Text = $"配置{provider.DisplayName} API";
+        _strings = strings;
+        Text = strings.ConfigureApi(provider.Id);
         AutoScaleMode = AutoScaleMode.Dpi;
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
@@ -31,7 +34,9 @@ internal sealed class ProviderConfigurationForm : Form
         ShowInTaskbar = true;
 
         _apiKey.UseSystemPasswordChar = true;
-        _apiKey.PlaceholderText = hasStoredKey ? "已保存，留空保持不变" : "粘贴 API Key";
+        _apiKey.PlaceholderText = hasStoredKey
+            ? strings.SavedLeaveBlank
+            : strings.PasteApiKey;
         _endpoint.Text = settings.Endpoint;
         _model.Text = settings.Model;
 
@@ -53,15 +58,15 @@ internal sealed class ProviderConfigurationForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-        AddField(layout, 0, "API Key", _apiKey);
-        AddField(layout, 1, "Endpoint", _endpoint);
-        AddField(layout, 2, "模型", _model);
+        AddField(layout, 0, strings.ApiKey, _apiKey);
+        AddField(layout, 1, strings.Endpoint, _endpoint);
+        AddField(layout, 2, strings.Model, _model);
 
         var note = new Label
         {
             AutoSize = true,
             ForeColor = SystemColors.GrayText,
-            Text = "API Key 保存到 Windows 凭据管理器；Endpoint 和模型名保存到当前用户设置。",
+            Text = strings.ApiStorageInfo,
             Margin = new Padding(0, 10, 0, 0)
         };
         layout.Controls.Add(note, 1, 3);
@@ -74,8 +79,8 @@ internal sealed class ProviderConfigurationForm : Form
             FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false
         };
-        var save = new Button { Text = "保存", AutoSize = true, DialogResult = DialogResult.None };
-        var cancel = new Button { Text = "取消", AutoSize = true, DialogResult = DialogResult.Cancel };
+        var save = new Button { Text = strings.Save, AutoSize = true, DialogResult = DialogResult.None };
+        var cancel = new Button { Text = strings.Cancel, AutoSize = true, DialogResult = DialogResult.Cancel };
         save.Click += SaveClicked;
         buttons.Controls.Add(save);
         buttons.Controls.Add(cancel);
@@ -110,19 +115,19 @@ internal sealed class ProviderConfigurationForm : Form
     {
         if (!_hasStoredKey && ApiKey.Length == 0)
         {
-            ShowValidation("API Key 不能为空");
+            ShowValidation(_strings.MissingApiKey);
             return;
         }
         if (!Uri.TryCreate(Endpoint, UriKind.Absolute, out var endpoint)
             || endpoint.Scheme != Uri.UriSchemeHttps
             || string.IsNullOrWhiteSpace(endpoint.Host))
         {
-            ShowValidation("Endpoint 必须是有效的 HTTPS 地址");
+            ShowValidation(_strings.InvalidEndpoint);
             return;
         }
         if (ModelName.Length == 0)
         {
-            ShowValidation("模型名不能为空");
+            ShowValidation(_strings.MissingModel);
             return;
         }
         DialogResult = DialogResult.OK;
@@ -131,6 +136,6 @@ internal sealed class ProviderConfigurationForm : Form
 
     private void ShowValidation(string message)
     {
-        MessageBox.Show(this, message, "KEYI 可译", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        MessageBox.Show(this, message, _strings.AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
     }
 }

@@ -48,6 +48,6 @@ private enum TranslationHostError: LocalizedError {
     case providerUnavailable
 
     var errorDescription: String? {
-        "当前翻译提供方暂不可用"
+        InterfaceStrings.current.providerUnavailable
     }
 }

@@ -6,7 +6,7 @@ struct StatusItemLabel: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        Label("KEYI 可译", systemImage: model.state.symbolName)
+        Label(model.strings.appName, systemImage: model.state.symbolName)
     }
 }
 
@@ -14,26 +14,28 @@ struct MenuBarContent: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        Text(model.state.title)
+        let strings = model.strings
 
-        Button("翻译当前输入框") {
+        Text(model.state.title(using: strings))
+
+        Button(strings.translateCurrentInput) {
             model.triggerFromMenu()
         }
         .disabled(model.isBusy)
 
-        Menu("翻译方式") {
+        Menu(strings.translationMethod) {
             ForEach(model.providerDescriptors) { provider in
                 Button {
                     model.selectProvider(provider.id)
                 } label: {
                     HStack {
-                        Text(provider.name)
+                        Text(strings.providerName(provider.id))
                         if provider.id == model.selectedProviderID {
                             Spacer()
                             Image(systemName: "checkmark")
                         } else if !provider.isAvailable {
                             Spacer()
-                            Text("待接入")
+                            Text(strings.unavailable)
                         }
                     }
                 }
@@ -41,15 +43,15 @@ struct MenuBarContent: View {
             }
         }
 
-        Text("当前：\(model.selectedProviderName)")
+        Text(strings.currentProvider(model.selectedProviderID))
 
-        Menu("目标语言：\(model.selectedTargetLanguage.displayName)") {
+        Menu(strings.target(model.selectedTargetLanguage)) {
             ForEach(TranslationLanguage.allCases) { language in
                 Button {
                     model.selectTargetLanguage(language)
                 } label: {
                     HStack {
-                        Text(language.displayName)
+                        Text(strings.languageName(language))
                         if language == model.selectedTargetLanguage {
                             Spacer()
                             Image(systemName: "checkmark")
@@ -60,13 +62,13 @@ struct MenuBarContent: View {
         }
         .disabled(model.isBusy)
 
-        Menu("翻译场景：\(model.selectedScene.displayName)") {
+        Menu(strings.scene(model.selectedScene)) {
             ForEach(TranslationScene.allCases) { scene in
                 Button {
                     model.selectScene(scene)
                 } label: {
                     HStack {
-                        Text(scene.displayName)
+                        Text(strings.sceneName(scene))
                         if scene == model.selectedScene {
                             Spacer()
                             Image(systemName: "checkmark")
@@ -77,13 +79,13 @@ struct MenuBarContent: View {
         }
         .disabled(!model.supportsTranslationCustomization)
 
-        Menu("英语风格：\(model.selectedEnglishStyle.displayName)") {
+        Menu(strings.style(model.selectedEnglishStyle)) {
             ForEach(EnglishStyle.allCases) { englishStyle in
                 Button {
                     model.selectEnglishStyle(englishStyle)
                 } label: {
                     HStack {
-                        Text(englishStyle.displayName)
+                        Text(strings.styleName(englishStyle))
                         if englishStyle == model.selectedEnglishStyle {
                             Spacer()
                             Image(systemName: "checkmark")
@@ -94,23 +96,22 @@ struct MenuBarContent: View {
         }
         .disabled(!model.supportsEnglishStyleCustomization)
 
-        if !model.supportsTranslationCustomization {
-            Text("翻译场景与英语风格仅适用于模型 API")
-        } else if !model.supportsEnglishStyleCustomization {
-            if model.selectedScene == .business {
-                Text("商务场景优先准确表达，不使用英语风格")
-            } else {
-                Text("翻译场景适用于全部目标语言；英语风格仅适用于英语")
-            }
+        let hint = strings.sceneStyleHint(
+            supportsScene: model.supportsTranslationCustomization,
+            supportsStyle: model.supportsEnglishStyleCustomization,
+            scene: model.selectedScene
+        )
+        if !hint.isEmpty {
+            Text(hint)
         }
 
-        Menu("添加/管理模型 API") {
+        Menu(strings.apiManagement) {
             ForEach(model.apiProviderProfiles) { profile in
                 Button {
                     model.configureAPI(for: profile.providerID)
                 } label: {
                     HStack {
-                        Text(profile.providerID.displayName)
+                        Text(strings.providerName(profile.providerID))
                         Spacer()
                         if model.isAPIConfigured(profile.providerID) {
                             Image(systemName: "checkmark")
@@ -120,41 +121,57 @@ struct MenuBarContent: View {
             }
         }
 
-        Button("配置本地 Gemma 4…") {
+        Button(strings.configureLocalModel + "…") {
             model.configureLocalModel()
         }
 
         if model.selectedProviderID == .localModel {
-            Text("本地：\(model.localModelName)")
-            Text("服务：\(model.localModelEndpoint)")
+            Text(strings.localModelValue(model.localModelName))
+            Text(strings.serviceValue(model.localModelEndpoint))
         }
 
         if !model.hasAccessibilityPermission {
-            Button("授予辅助功能权限") {
+            Button(strings.grantAccessibility) {
                 model.requestAccessibilityPermission()
             }
         }
 
         Divider()
 
-        Text("快捷键  \(model.hotKeyConfiguration.displayName)")
+        Text("\(strings.hotKey)  \(model.hotKeyConfiguration.displayName)")
 
-        Button("设置快捷键…") {
+        Button(strings.hotKeySettings) {
             model.configureHotKey()
         }
 
-        Button("恢复默认快捷键") {
+        Button(strings.restoreDefault) {
             model.restoreDefaultHotKey()
         }
         .disabled(model.hotKeyConfiguration == .default)
 
-        Button("打开辅助功能设置") {
+        Button(strings.openAccessibilitySettings) {
             model.openAccessibilitySettings()
+        }
+
+        Menu(strings.interfaceLanguage(model.interfaceLanguage)) {
+            ForEach(InterfaceLanguage.allCases, id: \.self) { language in
+                Button {
+                    model.selectInterfaceLanguage(language)
+                } label: {
+                    HStack {
+                        Text(strings.interfaceLanguageName(language))
+                        if language == model.interfaceLanguage {
+                            Spacer()
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
         }
 
         Divider()
 
-        Button("退出 KEYI 可译") {
+        Button(strings.exit) {
             NSApplication.shared.terminate(nil)
         }
         .onAppear {

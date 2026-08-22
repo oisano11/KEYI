@@ -28,9 +28,10 @@ expect(
     "未保存端点应回退 DeepSeek 默认值"
 )
 expect(
-    store.model(for: .volcengine) == "doubao-seed-translation-250915",
-    "未保存模型应回退火山默认值"
+    store.model(for: .volcengine) == "doubao-seed-1-6-250615",
+    "未保存模型应回退火山 Chat Completions 默认值"
 )
+expect(store.preferences.interfaceLanguage == .automatic, "新用户默认跟随系统界面语言")
 expect(
     store.localModelEndpoint() == "http://127.0.0.1:1234/v1/chat/completions",
     "本地模型端点应回退 LM Studio 默认值"
@@ -44,11 +45,13 @@ expect(store.select(.deepSeek), "可用的提供方应能选择")
 store.selectTargetLanguage(.japanese)
 store.selectScene(.socialMedia)
 store.selectEnglishStyle(.british)
+store.selectInterfaceLanguage(.english)
 let reloaded = TranslationSettingsStore(defaults: settingsDefaults)
 expect(reloaded.preferences.providerID == .deepSeek, "提供方选择应持久化")
 expect(reloaded.preferences.targetLanguage == .japanese, "目标语言应持久化")
 expect(reloaded.preferences.scene == .socialMedia, "翻译场景应持久化")
 expect(reloaded.preferences.englishStyle == .british, "英语风格应持久化")
+expect(reloaded.preferences.interfaceLanguage == .english, "界面语言应持久化")
 
 // 校验失败的路径在触碰钥匙串之前抛出，不会写入任何凭据。
 do {

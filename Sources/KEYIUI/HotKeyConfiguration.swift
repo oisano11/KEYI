@@ -197,14 +197,17 @@ final class HotKeySettingsStore {
 @MainActor
 enum HotKeyRecorder {
     static func record(current: HotKeyConfiguration) -> HotKeyConfiguration? {
+        let strings = InterfaceStrings.current
         let alert = NSAlert()
-        alert.messageText = "设置全局快捷键"
-        alert.informativeText = "请按下新组合键，需包含 ⌘、⌥ 或 ⌃。"
+        alert.messageText = strings.hotKeySettings
+        alert.informativeText = strings.isEnglish
+            ? "Press a new combination containing Command, Option, or Control."
+            : "请按下新组合键，需包含 ⌘、⌥ 或 ⌃。"
 
         let currentLabel = NSTextField(
-            labelWithString: "当前：\(current.displayName)"
+            labelWithString: strings.menuLabel(strings.current, value: current.displayName)
         )
-        let recordedLabel = NSTextField(labelWithString: "等待输入…")
+        let recordedLabel = NSTextField(labelWithString: strings.hotKeyWaiting)
         recordedLabel.font = .monospacedSystemFont(ofSize: 18, weight: .medium)
         recordedLabel.alignment = .center
 
@@ -214,8 +217,8 @@ enum HotKeyRecorder {
         stack.spacing = 10
         stack.widthAnchor.constraint(equalToConstant: 320).isActive = true
         alert.accessoryView = stack
-        alert.addButton(withTitle: "保存")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: strings.save)
+        alert.addButton(withTitle: strings.cancel)
         alert.buttons[0].isEnabled = false
 
         var captured: HotKeyConfiguration?
@@ -228,7 +231,7 @@ enum HotKeyRecorder {
                 alert.buttons[0].isEnabled = true
             } else {
                 captured = nil
-                recordedLabel.stringValue = "请加入 ⌘、⌥ 或 ⌃"
+                recordedLabel.stringValue = strings.hotKeyRequiresModifier
                 recordedLabel.textColor = .systemRed
                 alert.buttons[0].isEnabled = false
             }

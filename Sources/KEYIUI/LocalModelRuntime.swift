@@ -7,13 +7,14 @@ enum LocalModelRuntimeError: LocalizedError {
     case serviceUnavailable
 
     var errorDescription: String? {
-        switch self {
+        let strings = InterfaceStrings.current
+        return switch self {
         case .runtimeUnavailable:
-            "未找到 LM Studio 命令，请先安装 LM Studio"
+            strings.localRuntimeUnavailable
         case .modelNotInstalled:
-            "本机未找到 Gemma 4 12B，请在 LM Studio 下载或加载该模型"
+            strings.localModelNotInstalled
         case .serviceUnavailable:
-            "LM Studio 本地服务未能启动，请在 LM Studio 中开启 Local Server"
+            strings.localServiceUnavailable
         }
     }
 }

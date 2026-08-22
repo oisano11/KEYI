@@ -56,18 +56,19 @@ final class AccessibilityTextClient {
         case writeFailed(AXError)
 
         var errorDescription: String? {
-            switch self {
-            case .permissionRequired: "需要辅助功能权限"
-            case .noFocusedText: "当前没有可编辑的输入框"
-            case .unreadableText: "无法读取当前输入框"
-            case .invalidSelection: "当前文本选择范围无效"
-            case .readOnlyText: "当前输入框不支持原地替换"
-            case .terminalSelectionRequired: "终端命令：请先选中要翻译的内容，再触发翻译"
-            case .unsafeTerminalTranslation: "终端译文包含换行或控制字符，已取消替换"
-            case .terminalWriteFailed: "终端命令未能安全替换，已停止写入"
-            case .contentChanged: "输入内容或焦点已变化，已取消替换"
-            case .browserInputFailed: "浏览器输入框未接受翻译结果"
-            case let .writeFailed(error): "写入输入框失败（\(error.rawValue)）"
+            let strings = InterfaceStrings.current
+            return switch self {
+            case .permissionRequired: strings.statusPermissionRequired
+            case .noFocusedText: strings.accessibilityNoFocusedText
+            case .unreadableText: strings.accessibilityUnreadableText
+            case .invalidSelection: strings.accessibilityInvalidSelection
+            case .readOnlyText: strings.accessibilityReadOnly
+            case .terminalSelectionRequired: strings.terminalSelectionRequired
+            case .unsafeTerminalTranslation: strings.unsafeTerminalTranslation
+            case .terminalWriteFailed: strings.terminalWriteFailed
+            case .contentChanged: strings.contentChanged
+            case .browserInputFailed: strings.browserInputFailed
+            case let .writeFailed(error): strings.accessibilityWriteFailed(Int(error.rawValue))
             }
         }
     }

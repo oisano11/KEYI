@@ -7,13 +7,14 @@ enum CredentialStoreError: LocalizedError {
     case writeFailed
 
     var errorDescription: String? {
-        switch self {
+        let strings = InterfaceStrings.current
+        return switch self {
         case .invalidAccount:
-            "凭据名称无效"
+            strings.credentialInvalidAccount
         case .unreadableCredential:
-            "API Key 无法读取，请在“添加/管理模型 API”中重新保存一次"
+            strings.credentialUnreadable
         case .writeFailed:
-            "API Key 保存失败"
+            strings.credentialWriteFailed
         }
     }
 }
