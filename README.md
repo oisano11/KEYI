@@ -76,7 +76,7 @@ Scripts/build-windows.sh
 Scripts/package-experimental-binaries.sh
 ```
 
-详细说明见 [Windows/README.md](Windows/README.md)。稳定的 `v1.1.6` Release 仍以源码为主；`v1.1.6-binary-preview.1` 是未公证/未签名的实验二进制，不提供自动更新或官方安装支持。
+详细说明见 [Windows/README.md](Windows/README.md)。稳定的 `v1.1.6` Release 仍以源码为主；`v1.1.6-binary-preview.2` 提供 macOS DMG/ZIP 与 Windows 安装器/便携版，均为未公证或未受平台发行者信任的实验二进制，不提供自动更新或官方安装支持。
 
 ## 数据与隐私
 

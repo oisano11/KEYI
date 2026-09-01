@@ -48,6 +48,18 @@ MAC_ARCH="$(uname -m)"
 MAC_ZIP="$OUTPUT_DIR/KEYI-v${VERSION}-macOS-${MAC_ARCH}-experimental.zip"
 ditto -c -k --sequesterRsrc --keepParent "$MAC_APP" "$MAC_ZIP"
 
+DMG_STAGING="$(mktemp -d)"
+trap 'rm -rf "$DMG_STAGING"' EXIT
+ditto "$MAC_APP" "$DMG_STAGING/KEYI 可译.app"
+ln -s /Applications "$DMG_STAGING/Applications"
+MAC_DMG="$OUTPUT_DIR/KEYI-v${VERSION}-macOS-${MAC_ARCH}-experimental.dmg"
+hdiutil create \
+    -volname "KEYI 可译" \
+    -srcfolder "$DMG_STAGING" \
+    -ov \
+    -format UDZO \
+    "$MAC_DMG" >/dev/null
+
 echo "构建 Windows 实验包..."
 "$ROOT_DIR/Scripts/build-windows.sh"
 WINDOWS_SETUP="$WINDOWS_DIR/KEYI-Setup.exe"
@@ -63,11 +75,12 @@ cp "$WINDOWS_SETUP" "$WINDOWS_SETUP_ARTIFACT"
 cp "$WINDOWS_PORTABLE" "$WINDOWS_PORTABLE_ARTIFACT"
 
 MAC_SHA256="$(shasum -a 256 "$MAC_ZIP" | awk '{print $1}')"
+MAC_DMG_SHA256="$(shasum -a 256 "$MAC_DMG" | awk '{print $1}')"
 WINDOWS_SETUP_SHA256="$(shasum -a 256 "$WINDOWS_SETUP_ARTIFACT" | awk '{print $1}')"
 WINDOWS_PORTABLE_SHA256="$(shasum -a 256 "$WINDOWS_PORTABLE_ARTIFACT" | awk '{print $1}')"
 CHECKSUMS="$OUTPUT_DIR/SHA256SUMS.txt"
 {
-    shasum -a 256 "$MAC_ZIP" "$WINDOWS_SETUP_ARTIFACT" "$WINDOWS_PORTABLE_ARTIFACT" \
+    shasum -a 256 "$MAC_DMG" "$MAC_ZIP" "$WINDOWS_SETUP_ARTIFACT" "$WINDOWS_PORTABLE_ARTIFACT" \
         | sed "s#${OUTPUT_DIR}/##"
 } > "$CHECKSUMS"
 
@@ -77,7 +90,8 @@ printf '%s\n' \
     "" \
     "这是未公证/未受平台发行者信任的实验构建，不是受支持的正式安装包。" \
     "" \
-    "macOS：使用本机开发签名（${MAC_SIGNATURE}，身份：${MAC_IDENTITY:-none}，Team ID：${MAC_TEAM_ID:-not-set}），Gatekeeper 状态：${MAC_GATEKEEPER}。" \
+    "macOS：DMG 与 ZIP 内的应用使用本机开发签名（${MAC_SIGNATURE}，身份：${MAC_IDENTITY:-none}，Team ID：${MAC_TEAM_ID:-not-set}），Gatekeeper 状态：${MAC_GATEKEEPER}。" \
+    "打开 DMG 后，将 KEYI 可译拖到 Applications。" \
     "首次打开请在 Finder 中右键选择“打开”，不要关闭系统级 Gatekeeper。" \
     "" \
     "Windows：安装器和便携程序未使用 Authenticode 签名，SmartScreen 可能显示警告。" \
@@ -99,6 +113,7 @@ jq -n \
     --arg windows_signature "unsigned" \
     --arg native_acceptance "not-performed" \
     --arg mac_zip_sha256 "$MAC_SHA256" \
+    --arg mac_dmg_sha256 "$MAC_DMG_SHA256" \
     --arg windows_setup_sha256 "$WINDOWS_SETUP_SHA256" \
     --arg windows_portable_sha256 "$WINDOWS_PORTABLE_SHA256" \
     '{
@@ -107,11 +122,13 @@ jq -n \
       source_commit: $source_commit,
       channel: $channel,
       macos: {
+        dmg_artifact: ("KEYI-v" + $version + "-macOS-" + $mac_arch + "-experimental.dmg"),
         artifact: ("KEYI-v" + $version + "-macOS-" + $mac_arch + "-experimental.zip"),
         signature: $mac_signature,
         identity: $mac_identity,
         team_identifier: $mac_team_id,
         gatekeeper: $mac_gatekeeper,
+        dmg_sha256: $mac_dmg_sha256,
         sha256: $mac_zip_sha256
       },
       windows: {
