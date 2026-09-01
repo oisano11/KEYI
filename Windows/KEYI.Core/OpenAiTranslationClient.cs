@@ -20,7 +20,9 @@ public sealed class OpenAiTranslationClient
     {
         if (string.IsNullOrWhiteSpace(request.SourceText))
         {
-            throw new TranslationException("没有可翻译的文本");
+            throw new TranslationException(
+                TranslationErrorKind.EmptySource,
+                "No translatable source text");
         }
         ValidateConfiguration(configuration);
 
@@ -59,10 +61,12 @@ public sealed class OpenAiTranslationClient
         if (!response.IsSuccessStatusCode)
         {
             var detail = ReadErrorMessage(responseBody);
-            var providerName = ProviderCatalog.Get(configuration.ProviderId).DisplayName;
-            var suffix = string.IsNullOrWhiteSpace(detail) ? "" : $"：{detail}";
             throw new TranslationException(
-                $"{providerName} 请求失败（HTTP {(int)response.StatusCode}{suffix}）");
+                TranslationErrorKind.RequestFailed,
+                $"HTTP {(int)response.StatusCode}: {detail}",
+                configuration.ProviderId,
+                (int)response.StatusCode,
+                detail);
         }
 
         try
@@ -76,7 +80,9 @@ public sealed class OpenAiTranslationClient
                 ?.Trim();
             if (string.IsNullOrEmpty(content))
             {
-                throw new TranslationException("模型 API 没有返回翻译结果");
+                throw new TranslationException(
+                    TranslationErrorKind.EmptyResponse,
+                    "Translation service returned no translation");
             }
             return content;
         }
@@ -87,7 +93,10 @@ public sealed class OpenAiTranslationClient
         catch (Exception exception) when (
             exception is JsonException or KeyNotFoundException or InvalidOperationException)
         {
-            throw new TranslationException("模型 API 返回了无效响应", exception);
+            throw new TranslationException(
+                TranslationErrorKind.InvalidResponse,
+                "Translation service returned an invalid response",
+                exception);
         }
     }
 
@@ -96,15 +105,21 @@ public sealed class OpenAiTranslationClient
         if (configuration.Endpoint.Scheme != Uri.UriSchemeHttps
             || string.IsNullOrWhiteSpace(configuration.Endpoint.Host))
         {
-            throw new TranslationException("Endpoint 必须是有效的 HTTPS 地址");
+            throw new TranslationException(
+                TranslationErrorKind.InvalidEndpoint,
+                "Endpoint must be a valid HTTPS URL");
         }
         if (string.IsNullOrWhiteSpace(configuration.ApiKey))
         {
-            throw new TranslationException("API Key 不能为空");
+            throw new TranslationException(
+                TranslationErrorKind.MissingApiKey,
+                "API Key is required");
         }
         if (string.IsNullOrWhiteSpace(configuration.Model))
         {
-            throw new TranslationException("模型名不能为空");
+            throw new TranslationException(
+                TranslationErrorKind.MissingModel,
+                "Model name is required");
         }
     }
 
@@ -127,8 +142,53 @@ public sealed class OpenAiTranslationClient
 
 public sealed class TranslationException : Exception
 {
-    public TranslationException(string message) : base(message) { }
+    /// 错误类别；用户可见文案由 UI 层按界面语言渲染，
+    /// Message 仅保留中性英文兜底描述。
+    public TranslationErrorKind Kind { get; }
 
-    public TranslationException(string message, Exception innerException)
-        : base(message, innerException) { }
+    public ProviderId? ProviderId { get; }
+
+    public int? StatusCode { get; }
+
+    public string? Detail { get; }
+
+    public TranslationException(TranslationErrorKind kind, string message)
+        : base(message)
+    {
+        Kind = kind;
+    }
+
+    public TranslationException(
+        TranslationErrorKind kind,
+        string message,
+        Exception innerException)
+        : base(message, innerException)
+    {
+        Kind = kind;
+    }
+
+    public TranslationException(
+        TranslationErrorKind kind,
+        string message,
+        ProviderId providerId,
+        int statusCode,
+        string? detail)
+        : base(message)
+    {
+        Kind = kind;
+        ProviderId = providerId;
+        StatusCode = statusCode;
+        Detail = detail;
+    }
+}
+
+public enum TranslationErrorKind
+{
+    EmptySource,
+    InvalidEndpoint,
+    MissingApiKey,
+    MissingModel,
+    RequestFailed,
+    EmptyResponse,
+    InvalidResponse
 }

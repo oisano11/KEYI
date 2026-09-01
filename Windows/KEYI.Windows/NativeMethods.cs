@@ -81,7 +81,7 @@ internal static class NativeMethods
         var sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<Input>());
         if (sent != inputs.Length)
         {
-            throw new InvalidOperationException("无法向当前输入框发送粘贴命令");
+            throw new InvalidOperationException(UiStrings.Current.PasteCommandFailed);
         }
     }
 
@@ -108,7 +108,7 @@ internal static class NativeMethods
         var sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<Input>());
         if (sent != inputs.Count)
         {
-            throw new InvalidOperationException("无法向当前输入框发送写回验证命令");
+            throw new InvalidOperationException(UiStrings.Current.WriteVerificationCommandFailed);
         }
     }
 

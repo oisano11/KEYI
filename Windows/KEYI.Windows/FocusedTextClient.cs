@@ -22,11 +22,11 @@ internal sealed class FocusedTextClient
         var foregroundWindow = NativeMethods.GetForegroundWindow();
         if (foregroundWindow == nint.Zero)
         {
-            throw new FocusedTextException("没有找到当前输入窗口");
+            throw new FocusedTextException(UiStrings.Current.NoCurrentWindow);
         }
 
         var element = AutomationElement.FocusedElement
-            ?? throw new FocusedTextException("没有找到当前输入框");
+            ?? throw new FocusedTextException(UiStrings.Current.NoCurrentInput);
         var runtimeId = element.GetRuntimeId();
 
         var supportsTextPattern = element.TryGetCurrentPattern(
@@ -62,12 +62,12 @@ internal sealed class FocusedTextClient
                 if (!FocusedTextReadModePolicy.SupportsClipboardSelectionFallback(
                     NativeMethods.GetProcessName(foregroundWindow)))
                 {
-                    throw new FocusedTextException("当前控件不支持读取文本");
+                    throw new FocusedTextException(UiStrings.Current.ControlDoesNotSupportText);
                 }
                 return await CaptureClipboardSelectionAsync(foregroundWindow, runtimeId);
 
             default:
-                throw new FocusedTextException("当前控件不支持读取文本");
+                throw new FocusedTextException(UiStrings.Current.ControlDoesNotSupportText);
         }
     }
 
@@ -75,7 +75,7 @@ internal sealed class FocusedTextClient
     {
         if (string.IsNullOrWhiteSpace(translatedText))
         {
-            throw new FocusedTextException("翻译结果为空，未修改原文本");
+            throw new FocusedTextException(UiStrings.Current.EmptyTranslation);
         }
         await ValidateAsync(snapshot);
 
@@ -154,7 +154,7 @@ internal sealed class FocusedTextClient
             copiedSequence = await WaitForClipboardChangeAsync(originalSequence);
             if (copiedSequence == 0)
             {
-                throw new FocusedTextException("当前控件不支持读取文本；请先选中要翻译的文本");
+                throw new FocusedTextException(UiStrings.Current.ClipboardSelectionRequired);
             }
 
             var selectedText = ClipboardAccess.GetUnicodeText();
@@ -196,7 +196,7 @@ internal sealed class FocusedTextClient
     {
         if (NativeMethods.GetForegroundWindow() != snapshot.ForegroundWindow)
         {
-            throw new FocusedTextException("输入焦点已改变，已取消回写");
+            throw new FocusedTextException(UiStrings.Current.FocusChanged);
         }
 
         var current = await CaptureAsync();
@@ -206,7 +206,7 @@ internal sealed class FocusedTextClient
             || snapshot.SelectionStart != current.SelectionStart
             || !string.Equals(snapshot.SourceText, current.SourceText, StringComparison.Ordinal))
         {
-            throw new FocusedTextException("输入内容或选区已改变，已取消回写");
+            throw new FocusedTextException(UiStrings.Current.InputChanged);
         }
     }
 
@@ -228,7 +228,7 @@ internal sealed class FocusedTextClient
         {
             if (NativeMethods.GetForegroundWindow() != snapshot.ForegroundWindow)
             {
-                throw new FocusedTextException("写回后输入焦点已改变，请检查当前输入框");
+                throw new FocusedTextException(UiStrings.Current.WriteBackFocusChanged);
             }
 
             try
@@ -253,7 +253,7 @@ internal sealed class FocusedTextClient
             }
         }
 
-        throw new FocusedTextException("输入框未确认写入翻译结果，请检查目标应用是否允许粘贴");
+        throw new FocusedTextException(UiStrings.Current.WriteBackNotConfirmed);
     }
 
     private async Task VerifyClipboardSelectionCommitAsync(
@@ -262,7 +262,7 @@ internal sealed class FocusedTextClient
     {
         if (NativeMethods.GetForegroundWindow() != snapshot.ForegroundWindow)
         {
-            throw new FocusedTextException("写回后输入焦点已改变，请检查当前输入框");
+            throw new FocusedTextException(UiStrings.Current.WriteBackFocusChanged);
         }
 
         await Task.Delay(CommitVerificationInterval);
@@ -271,7 +271,7 @@ internal sealed class FocusedTextClient
         if (current.ReadMode != FocusedTextReadMode.ClipboardSelection
             || !string.Equals(current.SourceText, translatedText, StringComparison.Ordinal))
         {
-            throw new FocusedTextException("输入框未确认写入翻译结果，请检查目标应用是否允许粘贴");
+            throw new FocusedTextException(UiStrings.Current.WriteBackNotConfirmed);
         }
     }
 
@@ -300,11 +300,11 @@ internal sealed class FocusedTextClient
         string translatedText)
     {
         var context = snapshot.ContextText
-            ?? throw new FocusedTextException("缺少选区上下文，已取消回写");
+            ?? throw new FocusedTextException(UiStrings.Current.MissingSelectionContext);
         if (snapshot.SelectionStart < 0
             || snapshot.SelectionStart + snapshot.SourceText.Length > context.Length)
         {
-            throw new FocusedTextException("选区范围无效，已取消回写");
+            throw new FocusedTextException(UiStrings.Current.InvalidSelectionRange);
         }
         return context.Remove(snapshot.SelectionStart, snapshot.SourceText.Length)
             .Insert(snapshot.SelectionStart, translatedText);
@@ -324,7 +324,7 @@ internal sealed class FocusedTextClient
     {
         if (string.IsNullOrWhiteSpace(source))
         {
-            throw new FocusedTextException("当前输入框没有可翻译的文本");
+            throw new FocusedTextException(UiStrings.Current.NoTranslatableText);
         }
     }
 }
@@ -364,7 +364,7 @@ internal static class ClipboardAccess
                 Thread.Sleep(30);
             }
         }
-        throw new InvalidOperationException("剪贴板正被其他应用占用");
+        throw new InvalidOperationException(UiStrings.Current.ClipboardBusy);
     }
 
     public static void Retry(Action action) => Retry(() =>
@@ -408,7 +408,7 @@ internal sealed class ClipboardSnapshot
                 if (value is null)
                 {
                     throw new FocusedTextException(
-                        "无法完整保存当前剪贴板，未执行翻译");
+                        UiStrings.Current.ClipboardSaveFailed);
                 }
                 copy.SetData(format, false, Materialize(value));
             }
@@ -448,7 +448,7 @@ internal sealed class ClipboardSnapshot
             }
         }
 
-        throw new FocusedTextException("翻译已写入，但未能恢复剪贴板，请检查剪贴板占用程序");
+        throw new FocusedTextException(UiStrings.Current.ClipboardRestoreFailed);
     }
 
     private static object Materialize(object value)

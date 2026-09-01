@@ -80,7 +80,7 @@ public struct OpenAICompatibleTranslationProvider: TranslationProvider {
                 from: data
             ))?.error?.message
             throw APITranslationError.httpFailure(
-                providerName: id.displayName,
+                providerID: id,
                 statusCode: httpResponse.statusCode,
                 message: message
             )
@@ -97,7 +97,7 @@ public struct OpenAICompatibleTranslationProvider: TranslationProvider {
             throw APITranslationError.invalidResponse
         }
         guard let content, !content.isEmpty else {
-            throw APITranslationError.emptyResponse(providerName: id.displayName)
+            throw APITranslationError.emptyResponse(providerID: id)
         }
         return content
     }
@@ -130,25 +130,15 @@ private struct APIErrorResponse: Decodable, Sendable {
     }
 }
 
-enum APITranslationError: LocalizedError {
+/// 云端提供方错误只携带结构化数据；用户可见文案由 UI 层
+/// （InterfaceLocalization 的扩展）按当前界面语言渲染。
+public enum APITranslationError: Error {
     case emptySource
     case invalidResponse
-    case emptyResponse(providerName: String)
-    case httpFailure(providerName: String, statusCode: Int, message: String?)
-
-    var errorDescription: String? {
-        switch self {
-        case .emptySource:
-            return "没有可翻译的文本"
-        case .invalidResponse:
-            return "模型 API 返回了无效响应"
-        case let .emptyResponse(providerName):
-            return "\(providerName) 没有返回翻译结果"
-        case let .httpFailure(providerName, statusCode, message):
-            if let message, !message.isEmpty {
-                return "\(providerName) 请求失败（\(statusCode)：\(message)）"
-            }
-            return "\(providerName) 请求失败（HTTP \(statusCode)）"
-        }
-    }
+    case emptyResponse(providerID: TranslationProviderID)
+    case httpFailure(
+        providerID: TranslationProviderID,
+        statusCode: Int,
+        message: String?
+    )
 }

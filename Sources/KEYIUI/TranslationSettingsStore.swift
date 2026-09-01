@@ -43,7 +43,8 @@ final class TranslationSettingsStore {
     ) {
         self.defaults = defaults
         self.preferences = TranslationPreferences()
-        migrateLegacyValues(from: legacyDefaults)
+        let didMigrateLegacyValues = migrateLegacyValues(from: legacyDefaults)
+        removeLegacyTestLocalModelConfiguration(if: didMigrateLegacyValues)
         if let data = defaults.data(forKey: preferencesKey),
            let stored = try? JSONDecoder().decode(
                TranslationPreferences.self,
@@ -75,14 +76,16 @@ final class TranslationSettingsStore {
         migrateLegacyVolcengineConfigurationIfNeeded()
     }
 
-    private func migrateLegacyValues(from legacyDefaults: UserDefaults?) {
+    @discardableResult
+    private func migrateLegacyValues(from legacyDefaults: UserDefaults?) -> Bool {
         guard let legacyDefaults,
               legacyDefaults !== defaults,
               defaults.object(forKey: legacyMigrationKey) == nil else {
-            return
+            return false
         }
         defer { defaults.set(true, forKey: legacyMigrationKey) }
 
+        var didMigrateValue = false
         var keys = [preferencesKey, localEndpointKey, localModelKey]
         for providerID in APITranslationProviderCatalog.profiles.map(\.providerID) {
             keys.append(endpointKey(for: providerID))
@@ -91,8 +94,10 @@ final class TranslationSettingsStore {
         for key in keys where defaults.object(forKey: key) == nil {
             if let legacyValue = legacyDefaults.object(forKey: key) {
                 defaults.set(legacyValue, forKey: key)
+                didMigrateValue = true
             }
         }
+        return didMigrateValue
     }
 
     func select(_ providerID: TranslationProviderID) -> Bool {
@@ -171,9 +176,19 @@ final class TranslationSettingsStore {
             ?? LocalModelCatalog.gemma4.defaultEndpoint
     }
 
+    /// 返回设置页应展示的本地地址；未配置时不暴露运行时默认值。
+    func configuredLocalModelEndpoint() -> String? {
+        defaults.string(forKey: localEndpointKey)
+    }
+
     func localModelName() -> String {
         defaults.string(forKey: localModelKey)
             ?? LocalModelCatalog.gemma4.defaultModel
+    }
+
+    /// 返回设置页应展示的模型名；未配置时不暴露运行时默认值。
+    func configuredLocalModelName() -> String? {
+        defaults.string(forKey: localModelKey)
     }
 
     func saveLocalModelConfiguration(
@@ -288,6 +303,18 @@ final class TranslationSettingsStore {
         if let storedModel, model != storedModel {
             defaults.set(model, forKey: modelKey(for: .volcengine))
         }
+    }
+
+    private func removeLegacyTestLocalModelConfiguration(if didMigrateLegacyValues: Bool) {
+        guard didMigrateLegacyValues,
+              defaults.string(forKey: localEndpointKey)
+                == LocalModelCatalog.gemma4.defaultEndpoint,
+              defaults.string(forKey: localModelKey)
+                == LocalModelCatalog.gemma4.defaultModel else {
+            return
+        }
+        defaults.removeObject(forKey: localEndpointKey)
+        defaults.removeObject(forKey: localModelKey)
     }
 
     private static let logger = Logger(

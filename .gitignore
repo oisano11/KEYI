@@ -6,6 +6,9 @@
 agent_team/
 *-goal.md
 *-progress.md
+# 私库内部文档层：公开仓库忽略，私库跟踪全部任务文档
+!*-goal.md
+!*-progress.md
 *.docx
 *.dmg
 *.pkg

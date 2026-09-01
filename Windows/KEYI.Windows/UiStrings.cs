@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
 using KEYI.Core;
 
 namespace KEYI.Windows;
@@ -40,16 +39,16 @@ internal sealed class UiStrings
     public string TranslateCurrentInput => IsEnglish
         ? "Translate Current Input"
         : "立即翻译";
-    public string TranslationMethod => IsEnglish ? "Provider" : "翻译方式";
+    public string TranslationMethod => IsEnglish ? "Translation" : "翻译服务";
     public string CurrentLabel => IsEnglish ? "Current" : "当前";
-    public string TargetLanguage => IsEnglish ? "Target" : "目标语言";
-    public string Scene => IsEnglish ? "Scene" : "场合";
-    public string Style => IsEnglish ? "Tone" : "语气";
+    public string TargetLanguage => IsEnglish ? "Language" : "目标语言";
+    public string Scene => IsEnglish ? "Context" : "使用场景";
+    public string Style => IsEnglish ? "Style" : "表达风格";
     public string InterfaceLanguage => IsEnglish ? "Language" : "界面语言";
-    public string ApiManagement => IsEnglish ? "Model API" : "模型 API";
+    public string ApiManagement => IsEnglish ? "Translation Services" : "翻译服务";
     public string LocalModel => IsEnglish ? "Local Model" : "本地模型";
-    public string HotKey => IsEnglish ? "Hotkey" : "热键";
-    public string HotKeySettings => IsEnglish ? "Hotkey Settings..." : "设置热键...";
+    public string HotKey => IsEnglish ? "Keyboard Shortcut" : "快捷键";
+    public string HotKeySettings => IsEnglish ? "Edit Shortcut..." : "设置快捷键...";
     public string RestoreDefault => IsEnglish ? "Restore Default" : "恢复默认";
     public string AccessibilitySettings => IsEnglish
         ? "Accessibility Settings"
@@ -70,10 +69,10 @@ internal sealed class UiStrings
         ? "Saved; leave blank to keep it"
         : "已保存，留空保持不变";
     public string PasteApiKey => IsEnglish ? "Paste API Key" : "粘贴 API Key";
-    public string ApiRequiredTitle => IsEnglish ? "Model API required" : "需要配置模型 API";
+    public string ApiRequiredTitle => IsEnglish ? "Translation service required" : "需要配置翻译服务";
     public string ConfigureApiHint(ProviderId provider) => IsEnglish
-        ? $"Right-click the {AppName} tray icon to configure {ProviderName(provider)} API."
-        : $"请右键 {AppName} 托盘图标，配置 {ProviderName(provider)} API。";
+        ? $"Open {AppName} Settings to set up {ProviderName(provider)}."
+        : $"请打开 {AppName} 设置，配置 {ProviderName(provider)}。";
     public string InterfaceLanguageUpdated => IsEnglish
         ? "Interface language updated"
         : "界面语言已更新";
@@ -85,8 +84,8 @@ internal sealed class UiStrings
     {
         ProviderId.DeepSeek => "DeepSeek",
         ProviderId.Qwen => IsEnglish ? "Qwen" : "通义千问",
-        ProviderId.Volcengine => IsEnglish ? "Volcengine" : "火山引擎",
-        ProviderId.XAI => "xAI Grok",
+        ProviderId.Volcengine => IsEnglish ? "Volcano Ark" : "火山方舟",
+        ProviderId.XAI => "Grok",
         _ => provider.ToString()
     };
 
@@ -118,6 +117,7 @@ internal sealed class UiStrings
     public string LanguageName(TranslationLanguage language) => language switch
     {
         TranslationLanguage.English => English,
+        TranslationLanguage.Chinese => IsEnglish ? "Chinese" : "中文",
         TranslationLanguage.Japanese => IsEnglish ? "Japanese" : "日语",
         TranslationLanguage.Korean => IsEnglish ? "Korean" : "韩语",
         TranslationLanguage.French => IsEnglish ? "French" : "法语",
@@ -166,8 +166,8 @@ internal sealed class UiStrings
         if (!supportsScene)
         {
             return IsEnglish
-                ? "Scene and tone apply only to model APIs"
-                : "场合与语气仅适用于模型 API";
+                ? "Context and style are available with model services"
+                : "使用场景和表达风格仅适用于模型服务";
         }
         if (supportsStyle)
         {
@@ -176,20 +176,20 @@ internal sealed class UiStrings
         return scene switch
         {
             TranslationScene.Business => IsEnglish
-                ? "Business prioritizes accuracy; tone is disabled"
-                : "商务优先准确，不使用语气",
+                ? "Business prioritizes accuracy; style is unavailable"
+                : "商务优先准确，不使用表达风格",
             TranslationScene.Faithful => IsEnglish
-                ? "Faithful mode keeps the source; tone is disabled"
-                : "贴近原文，不使用语气",
+                ? "Faithful mode keeps the source; style is unavailable"
+                : "贴近原文，不使用表达风格",
             _ => IsEnglish
-                ? "Scene supports all target languages; tone applies to English"
-                : "场合适用于全部目标语言；语气仅适用于英语"
+                ? "Context supports all languages; style applies to English"
+                : "使用场景适用于全部目标语言；表达风格仅适用于英语"
         };
     }
 
     public string ConfigureApi(ProviderId provider) => IsEnglish
-        ? $"Configure {ProviderName(provider)} API"
-        : $"配置{ProviderName(provider)} API";
+        ? $"Set Up {ProviderName(provider)}"
+        : $"配置 {ProviderName(provider)}";
 
     public string ApiStorageInfo => IsEnglish
         ? "API Key is stored in Windows Credential Manager; Endpoint and model are stored in local settings."
@@ -209,11 +209,42 @@ internal sealed class UiStrings
     public string MissingApiKey => IsEnglish ? "API Key is required" : "API Key 不能为空";
     public string MissingModel => IsEnglish ? "Model name is required" : "模型名不能为空";
     public string InvalidApiResponse => IsEnglish
-        ? "The model API returned an invalid response"
-        : "模型 API 返回了无效响应";
+        ? "The translation service returned an invalid response"
+        : "翻译服务返回了无效响应";
     public string EmptyApiResponse => IsEnglish
-        ? "The model API returned no translation"
-        : "模型 API 没有返回翻译结果";
+        ? "The translation service returned no translation"
+        : "翻译服务没有返回翻译结果";
+    public string EmptySource => IsEnglish
+        ? "There is no text to translate"
+        : "没有可翻译的文本";
+
+    /// 云端请求失败文案；提供方名与语言在显示时才解析。
+    public string ApiRequestFailed(ProviderId provider, int statusCode, string? detail)
+    {
+        var suffix = string.IsNullOrWhiteSpace(detail)
+            ? ""
+            : IsEnglish ? $": {detail}" : $"：{detail}";
+        return IsEnglish
+            ? $"{ProviderName(provider)} request failed (HTTP {statusCode}{suffix})"
+            : $"{ProviderName(provider)} 请求失败（HTTP {statusCode}{suffix}）";
+    }
+
+    /// 云端提供方错误按类别渲染；不再依赖异常原文做字符串匹配。
+    public string TranslationFailure(TranslationException exception) => exception.Kind switch
+    {
+        TranslationErrorKind.EmptySource => EmptySource,
+        TranslationErrorKind.InvalidEndpoint => InvalidEndpoint,
+        TranslationErrorKind.MissingApiKey => MissingApiKey,
+        TranslationErrorKind.MissingModel => MissingModel,
+        TranslationErrorKind.RequestFailed => ApiRequestFailed(
+            exception.ProviderId ?? ProviderId.DeepSeek,
+            exception.StatusCode ?? 0,
+            exception.Detail),
+        TranslationErrorKind.EmptyResponse => EmptyApiResponse,
+        TranslationErrorKind.InvalidResponse => InvalidApiResponse,
+        _ => exception.Message
+    };
+
     public string CredentialReadFailed(int code) => IsEnglish
         ? $"Could not read Windows credentials ({code})"
         : $"读取 Windows 凭据失败（{code}）";
@@ -281,19 +312,19 @@ internal sealed class UiStrings
         ? $"Translating with {ProviderName(provider)}"
         : $"正在使用 {ProviderName(provider)} 翻译";
     public string ConfigureProviderFirst(ProviderId provider) => IsEnglish
-        ? $"Configure {ProviderName(provider)} API first"
-        : $"请先配置 {ProviderName(provider)} API";
+        ? $"Set up {ProviderName(provider)} first"
+        : $"请先配置 {ProviderName(provider)}";
     public string SelectedProvider(ProviderId provider) => IsEnglish
-        ? $"Selected {ProviderName(provider)}"
-        : $"已选择 {ProviderName(provider)}";
+        ? $"Using {ProviderName(provider)}"
+        : $"正在使用 {ProviderName(provider)}";
     public string SavedProvider(ProviderId provider) => IsEnglish
-        ? $"Saved {ProviderName(provider)} API"
-        : $"已保存 {ProviderName(provider)} API";
+        ? $"Saved {ProviderName(provider)}"
+        : $"已保存 {ProviderName(provider)}";
     public string HotKeyUpdated(string value) => IsEnglish
-        ? $"Hotkey updated to {value}"
+        ? $"Keyboard shortcut updated to {value}"
         : $"快捷键已更新为 {value}";
     public string HotKeyUnavailable(string value) => IsEnglish
-        ? $"Hotkey {value} could not be registered; another app may be using it."
+        ? $"Keyboard shortcut {value} could not be registered; another app may be using it."
         : $"快捷键 {value} 无法注册，可能已被其他应用占用。";
     public string SaveHotKeyFailed => IsEnglish
         ? "Could not save the hotkey, and the previous hotkey could not be restored. Please set it again."
@@ -302,11 +333,23 @@ internal sealed class UiStrings
         ? $"The previous hotkey was unavailable; restored {value}"
         : $"原快捷键不可用，已恢复 {value}";
     public string HotKeyRegistrationFailed => IsEnglish
-        ? "Global hotkey registration failed; set it again from the tray menu"
-        : "全局快捷键注册失败，请从托盘菜单重新设置";
+        ? "Global keyboard shortcut registration failed; set it again in Settings."
+        : "全局快捷键注册失败，请在设置中重新设置";
 
-    public string UpdateChecking => IsEnglish ? "Checking for updates" : "正在检查更新";
-    public string UpToDate => IsEnglish ? "You are up to date" : "当前已是最新版本";
+    // MARK: 设置窗口
+
+    public string Settings => IsEnglish ? "Settings..." : "设置...";
+    public string SettingsTitle => IsEnglish ? "Settings" : "设置";
+    public string TranslationTab => IsEnglish ? "Translation" : "翻译";
+    public string ProvidersTab => IsEnglish ? "Services" : "翻译服务";
+    public string HotKeyTab => IsEnglish ? "Shortcuts" : "快捷键";
+    public string GeneralTab => IsEnglish ? "General" : "通用";
+    public string SavedHint => IsEnglish ? "Saved" : "已保存";
+    public string UseAsCurrent => IsEnglish ? "Use for Translation" : "用于翻译";
+    public string CurrentlyUsed => IsEnglish ? "Used for Translation" : "正在用于翻译";
+    public string ConfiguredSuffix => IsEnglish ? "Configured" : "已配置";
+
+    public string UpdateChecking => IsEnglish ? "Checking for updates" : "正在检查更新";    public string UpToDate => IsEnglish ? "You are up to date" : "当前已是最新版本";
     public string UpToDateDetail(string version) => IsEnglish
         ? $"You are up to date (v{version})."
         : $"当前已是最新版本（v{version}）。";
@@ -337,71 +380,16 @@ internal sealed class UiStrings
             return TimeoutOrCancelled;
         }
 
-        var message = exception.Message;
-        var providerFailure = Regex.Match(
-            message,
-            @"^(?<provider>.+) 请求失败（HTTP (?<status>\d+)(?:：(?<detail>.*))?）$",
-            RegexOptions.CultureInvariant);
-        if (providerFailure.Success
-            && int.TryParse(providerFailure.Groups["status"].Value, out var statusCode))
+        if (exception is TranslationException translation)
         {
-            var provider = providerFailure.Groups["provider"].Value switch
-            {
-                "通义千问" => IsEnglish ? "Qwen" : "通义千问",
-                "火山引擎" => IsEnglish ? "Volcengine" : "火山引擎",
-                "xAI Grok" => "xAI Grok",
-                "DeepSeek" => "DeepSeek",
-                _ => providerFailure.Groups["provider"].Value
-            };
-            var detail = providerFailure.Groups["detail"].Success
-                ? providerFailure.Groups["detail"].Value
-                : null;
-            var suffix = detail is null
-                ? ""
-                : IsEnglish ? $": {detail}" : $"：{detail}";
-            return IsEnglish
-                ? $"{provider} request failed (HTTP {statusCode}{suffix})"
-                : $"{provider} 请求失败（HTTP {statusCode}{suffix}）";
+            return TranslationFailure(translation);
         }
 
+        var message = exception.Message;
         return message switch
         {
-            "没有可翻译的文本" => IsEnglish ? "There is no text to translate" : message,
-            "翻译结果为空，未修改原文本" => IsEnglish ? "The translation was empty; the source was not changed" : message,
-            "当前没有可编辑的输入框" => IsEnglish ? "There is no editable input field" : message,
-            "无法读取当前输入框" => IsEnglish ? "Could not read the current input field" : message,
-            "当前控件不支持读取文本" => IsEnglish ? "The current control does not support reading text" : message,
-            "输入焦点已改变，已取消回写" => IsEnglish ? "Input focus changed; replacement cancelled" : message,
-            "输入内容或选区已改变，已取消回写" => IsEnglish ? "Input or selection changed; replacement cancelled" : message,
-            "输入框未确认写入翻译结果，请检查目标应用是否允许粘贴" => IsEnglish ? "The input field did not confirm the translation; check whether the target app allows paste" : message,
-            "API Key 不能为空" => MissingApiKey,
-            "模型名不能为空" => MissingModel,
-            "Endpoint 必须是有效的 HTTPS 地址" => InvalidEndpoint,
-            "模型 API 返回了无效响应" => InvalidApiResponse,
-            "模型 API 没有返回翻译结果" => EmptyApiResponse,
-            _ when message.StartsWith("读取 Windows 凭据失败（", StringComparison.Ordinal)
-                => IsEnglish
-                    ? message.Replace("读取 Windows 凭据失败（", "Could not read Windows credentials (", StringComparison.Ordinal)
-                        .Replace("）", ")", StringComparison.Ordinal)
-                    : message,
-            _ when message.StartsWith("保存 Windows 凭据失败（", StringComparison.Ordinal)
-                => IsEnglish
-                    ? message.Replace("保存 Windows 凭据失败（", "Could not save Windows credentials (", StringComparison.Ordinal)
-                        .Replace("）", ")", StringComparison.Ordinal)
-                    : message,
-            "没有找到当前输入窗口" => IsEnglish ? "No current input window found" : message,
-            "没有找到当前输入框" => IsEnglish ? "No current input field found" : message,
-            "无法向当前输入框发送粘贴命令" => IsEnglish ? "Could not send the paste command to the current input field" : message,
-            "无法向当前输入框发送写回验证命令" => IsEnglish ? "Could not send the write-back verification command" : message,
-            "剪贴板正被其他应用占用" => IsEnglish ? "The clipboard is being used by another app" : message,
-            "更新服务返回了无效响应" => IsEnglish ? "The update service returned an invalid response" : message,
-            "升级包校验失败，请稍后重试" => IsEnglish ? "The update package checksum failed; try again later" : message,
-            "更新地址必须使用 HTTPS" => IsEnglish ? "The update URL must use HTTPS" : message,
-            "更新版本号无效" => IsEnglish ? "The update version is invalid" : message,
-            "升级包校验文件无效" => IsEnglish ? "The update checksum file is invalid" : message,
             _ when string.IsNullOrWhiteSpace(message) => OperationFailed,
             _ => message.Replace("HanYi", AppName, StringComparison.Ordinal)
         };
     }
 }
-

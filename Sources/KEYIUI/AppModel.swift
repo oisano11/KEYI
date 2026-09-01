@@ -28,12 +28,8 @@ final class AppModel: ObservableObject {
         }
 
         var symbolName: String {
-            switch self {
-            case .ready, .success: "character.cursor.ibeam"
-            case .preparing, .translating: "ellipsis.circle"
-            case .permissionRequired: "lock.fill"
-            case .failure: "exclamationmark.triangle"
-            }
+            // 菜单栏入口保持稳定的品牌标识；翻译状态由菜单首行与顶部 HUD 表达。
+            "bird.fill"
         }
 
         var isFailure: Bool {
@@ -52,6 +48,13 @@ final class AppModel: ObservableObject {
         let englishStyle: EnglishStyle
     }
 
+    enum SettingsSection: Hashable {
+        case translation
+        case providers(TranslationProviderID?)
+        case hotKey
+        case general
+    }
+
     @Published private(set) var state: State = .ready
     @Published var translationConfiguration: TranslationSession.Configuration?
     @Published private(set) var selectedProviderID: TranslationProviderID
@@ -63,7 +66,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var hotKeyConfiguration: HotKeyConfiguration
     @Published private(set) var localModelEndpoint: String
     @Published private(set) var localModelName: String
-
+    @Published var settingsSection: SettingsSection = .translation
     private let accessibility = AccessibilityTextClient()
     private let settings: TranslationSettingsStore
     private let hotKeySettings: HotKeySettingsStore
@@ -87,8 +90,8 @@ final class AppModel: ObservableObject {
         self.selectedEnglishStyle = settings.preferences.englishStyle
         self.interfaceLanguage = settings.preferences.interfaceLanguage
         self.hotKeyConfiguration = hotKeySettings.configuration
-        self.localModelEndpoint = settings.localModelEndpoint()
-        self.localModelName = settings.localModelName()
+        self.localModelEndpoint = settings.configuredLocalModelEndpoint() ?? ""
+        self.localModelName = settings.configuredLocalModelName() ?? ""
         self.configuredAPIProviderIDs = Set(
             APITranslationProviderCatalog.profiles.compactMap { profile in
                 settings.hasStoredAPIConfiguration(for: profile.providerID)
@@ -189,10 +192,20 @@ final class AppModel: ObservableObject {
         configuredAPIProviderIDs.contains(providerID)
     }
 
+    /// 设置窗口读取已存配置；Key 永不回读明文。
+    func storedEndpoint(for providerID: TranslationProviderID) -> String? {
+        settings.endpoint(for: providerID)
+    }
+
+    func storedModel(for providerID: TranslationProviderID) -> String? {
+        settings.model(for: providerID)
+    }
+
     func selectProvider(_ providerID: TranslationProviderID) {
         if providerID.requiresAPIConfiguration,
            !isAPIConfigured(providerID) {
-            guard configureAPI(for: providerID) else { return }
+            openSettings(.providers(providerID))
+            return
         }
         guard settings.select(providerID) else { return }
         selectedProviderID = providerID
@@ -201,128 +214,36 @@ final class AppModel: ObservableObject {
         }
     }
 
-    @discardableResult
-    func configureAPI(for providerID: TranslationProviderID) -> Bool {
-        guard APITranslationProviderCatalog.profile(
-            for: providerID
-        ) != nil else {
-            showError(strings.unsupportedProvider)
-            return false
-        }
+    // MARK: 设置窗口
 
-        let apiKeyField = NSSecureTextField()
-        apiKeyField.placeholderString = isAPIConfigured(providerID)
-            ? strings.savedLeaveBlank
-            : strings.pasteAPIKey
-        let endpointField = NSTextField()
-        endpointField.placeholderString = "https://example.com/v1/chat/completions"
-        endpointField.stringValue = settings.endpoint(for: providerID) ?? ""
-        let modelField = NSTextField()
-        modelField.stringValue = settings.model(for: providerID) ?? ""
-
-        guard presentConfigurationForm(
-            title: strings.configureAPI(providerID),
-            informativeText: strings.apiStorageInfo,
-            fields: [
-                (strings.apiKey, apiKeyField),
-                (strings.endpoint, endpointField),
-                (strings.model, modelField)
-            ],
-            initialFocus: apiKeyField
-        ) else { return false }
-
-        do {
-            try settings.saveAPIConfiguration(
-                for: providerID,
-                apiKey: apiKeyField.stringValue,
-                endpoint: endpointField.stringValue.trimmingCharacters(
-                    in: .whitespacesAndNewlines
-                ),
-                model: modelField.stringValue
-            )
-            configuredAPIProviderIDs.insert(providerID)
-            if state.isFailure { state = .ready }
-            return true
-        } catch {
-            showError(strings.saveAPIFailed(providerID, detail: error.localizedDescription))
-            return false
-        }
+    func openSettings(_ section: SettingsSection = .translation) {
+        settingsSection = section
+        SettingsWindowController.shared.show()
     }
 
-    @discardableResult
-    func configureLocalModel() -> Bool {
-        let endpointField = NSTextField(string: localModelEndpoint)
-        let modelField = NSTextField(string: localModelName)
-
-        guard presentConfigurationForm(
-            title: strings.configureLocalModel,
-            informativeText: strings.localModelInfo,
-            fields: [
-                (strings.endpoint, endpointField),
-                (strings.model, modelField)
-            ],
-            initialFocus: endpointField
-        ) else { return false }
-
-        do {
-            try settings.saveLocalModelConfiguration(
-                endpoint: endpointField.stringValue.trimmingCharacters(
-                    in: .whitespacesAndNewlines
-                ),
-                model: modelField.stringValue
-            )
-            localModelEndpoint = settings.localModelEndpoint()
-            localModelName = settings.localModelName()
-            if state.isFailure { state = .ready }
-            return true
-        } catch {
-            showError("\(strings.saveLocalModelFailedPrefix)\(error.localizedDescription)")
-            return false
-        }
+    /// 保存云端提供方配置；校验失败抛出已本地化的错误。
+    func saveProviderConfiguration(
+        providerID: TranslationProviderID,
+        apiKey: String,
+        endpoint: String,
+        model: String
+    ) throws {
+        try settings.saveAPIConfiguration(
+            for: providerID,
+            apiKey: apiKey,
+            endpoint: endpoint,
+            model: model
+        )
+        configuredAPIProviderIDs.insert(providerID)
+        if state.isFailure { state = .ready }
     }
 
-    /// 弹出带表单的配置窗口；返回用户是否点击"保存"。
-    /// macOS 26 的 NSAlert 不再可靠地采用 NSGridView 的内在尺寸，
-    /// 直接作为 accessoryView 会把整张表压成几个小白条，因此用明确
-    /// 尺寸的容器承载表单，保证标签和输入框始终可见、可点击。
-    private func presentConfigurationForm(
-        title: String,
-        informativeText: String,
-        fields: [(label: String, view: NSView)],
-        initialFocus: NSView
-    ) -> Bool {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = informativeText
-
-        let grid = NSGridView(
-            views: fields.map { [NSTextField(labelWithString: $0.label), $0.view] }
-        )
-        grid.rowSpacing = 8
-        grid.columnSpacing = 10
-        grid.column(at: 0).xPlacement = .trailing
-        grid.column(at: 0).width = 76
-        grid.column(at: 1).width = 374
-        for rowIndex in 0..<fields.count {
-            grid.row(at: rowIndex).height = 24
-        }
-
-        let formContainer = NSView(
-            frame: NSRect(
-                x: 0,
-                y: 0,
-                width: 460,
-                height: 24 * fields.count + 8 * max(fields.count - 1, 0)
-            )
-        )
-        grid.frame = formContainer.bounds
-        grid.autoresizingMask = [.width, .height]
-        formContainer.addSubview(grid)
-        alert.accessoryView = formContainer
-        alert.addButton(withTitle: strings.save)
-        alert.addButton(withTitle: strings.cancel)
-        alert.window.initialFirstResponder = initialFocus
-        return alert.runModal() == .alertFirstButtonReturn
+    /// 保存本地模型配置；校验失败抛出已本地化的错误。
+    func saveLocalModelConfiguration(endpoint: String, model: String) throws {
+        try settings.saveLocalModelConfiguration(endpoint: endpoint, model: model)
+        localModelEndpoint = settings.localModelEndpoint()
+        localModelName = settings.localModelName()
+        if state.isFailure { state = .ready }
     }
 
     var isBusy: Bool {
@@ -351,13 +272,6 @@ final class AppModel: ObservableObject {
             string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
         ) else { return }
         NSWorkspace.shared.open(url)
-    }
-
-    func triggerFromMenu() {
-        Task {
-            try? await Task.sleep(for: .milliseconds(180))
-            await triggerTranslation()
-        }
     }
 
     func triggerTranslation() async {
@@ -407,8 +321,17 @@ final class AppModel: ObservableObject {
             requestAccessibilityPermission()
         } catch {
             logger.error("Focused text capture failed: \(error.localizedDescription, privacy: .private)")
-            showError(error.localizedDescription)
+            showError(userMessage(for: error))
         }
+    }
+
+    /// 错误的用户可见文案：云端提供方错误按界面语言渲染，
+    /// 其余错误类型自身已本地化。
+    private func userMessage(for error: Swift.Error) -> String {
+        if let apiError = error as? APITranslationError {
+            return apiError.localizedMessage
+        }
+        return error.localizedDescription
     }
 
     private func beginSystemTranslation(_ request: TranslationRequest) {
@@ -418,7 +341,9 @@ final class AppModel: ObservableObject {
             translationConfiguration = configuration
         } else {
             translationConfiguration = TranslationSession.Configuration(
-                source: Locale.Language(identifier: "zh-Hans"),
+                source: request.targetLanguage == .chinese
+                    ? nil
+                    : Locale.Language(identifier: "zh-Hans"),
                 target: Locale.Language(identifier: request.targetLanguage.rawValue)
             )
         }
@@ -441,6 +366,9 @@ final class AppModel: ObservableObject {
                     TextTranslationRequest(
                         sourceText: request.sourceText,
                         contextText: request.contextText,
+                        sourceLanguage: request.targetLanguage == .chinese
+                            ? "auto"
+                            : "zh-Hans",
                         targetLanguage: request.targetLanguage,
                         scene: request.scene,
                         englishStyle: request.englishStyle
@@ -471,6 +399,9 @@ final class AppModel: ObservableObject {
                     TextTranslationRequest(
                         sourceText: request.sourceText,
                         contextText: request.contextText,
+                        sourceLanguage: request.targetLanguage == .chinese
+                            ? "auto"
+                            : "zh-Hans",
                         targetLanguage: request.targetLanguage,
                         scene: request.scene,
                         englishStyle: request.englishStyle
@@ -535,7 +466,7 @@ final class AppModel: ObservableObject {
             state = .ready
         } else {
             logger.error("Translation failed: \(error.localizedDescription, privacy: .private)")
-            showError(strings.translationFailed(error.localizedDescription))
+            showError(strings.translationFailed(userMessage(for: error)))
         }
     }
 

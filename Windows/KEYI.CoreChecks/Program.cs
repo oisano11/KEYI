@@ -44,8 +44,10 @@ static Task CheckProviderDefaults()
 static Task CheckTargetLanguages()
 {
     var languages = Enum.GetValues<TranslationLanguage>();
-    Assert(languages.Length == 12, "language count");
-    Assert(languages.Select(language => language.LanguageCode()).Distinct().Count() == 12, "language codes unique");
+    Assert(languages.Length == 13, "language count");
+    Assert(languages.Select(language => language.LanguageCode()).Distinct().Count() == 13, "language codes unique");
+    Assert(TranslationLanguage.Chinese.DisplayName() == "中文", "Chinese display name");
+    Assert(TranslationLanguage.Chinese.LanguageCode() == "zh-Hans", "Chinese language code");
     Assert(TranslationLanguage.Japanese.DisplayName() == "日语", "Japanese display name");
     Assert(TranslationLanguage.Arabic.LanguageCode() == "ar", "Arabic code");
     return Task.CompletedTask;
@@ -206,6 +208,15 @@ static Task CheckInterfaceLabels()
         EnglishStyle.BlackAmerican));
     Assert(prompt.Contains("not a slang quota", StringComparison.Ordinal), "black american is not a slang quota");
     Assert(!prompt.Contains("finna", StringComparison.Ordinal), "black american must not force slang");
+    var chinesePrompt = TranslationPromptBuilder.SystemPrompt(new TextTranslationRequest(
+        "Hello",
+        null,
+        TranslationLanguage.Chinese,
+        TranslationScene.Automatic,
+        EnglishStyle.Automatic));
+    Assert(
+        chinesePrompt.Contains("Detect the source language and translate to zh-Hans", StringComparison.Ordinal),
+        "Chinese target detects source language");
     return Task.CompletedTask;
 }
 
@@ -232,8 +243,10 @@ static async Task CheckApiError()
     }
     catch (TranslationException exception)
     {
-        Assert(exception.Message.Contains("401", StringComparison.Ordinal), "status code");
-        Assert(exception.Message.Contains("bad key", StringComparison.Ordinal), "error detail");
+        Assert(exception.Kind == TranslationErrorKind.RequestFailed, "error kind");
+        Assert(exception.ProviderId == ProviderId.Qwen, "error provider");
+        Assert(exception.StatusCode == 401, "status code");
+        Assert(exception.Detail == "bad key", "error detail");
     }
 }
 
@@ -250,7 +263,10 @@ static Task CheckHttpsValidation()
     }
     catch (TranslationException exception)
     {
-        Assert(exception.Message.Contains("HTTPS", StringComparison.Ordinal), "HTTPS error");
+        Assert(exception.Kind == TranslationErrorKind.InvalidEndpoint, "HTTPS error kind");
+        Assert(
+            exception.Message.Contains("HTTPS", StringComparison.Ordinal),
+            "HTTPS fallback message");
     }
     return Task.CompletedTask;
 }

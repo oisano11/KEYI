@@ -18,7 +18,7 @@ internal sealed class CredentialStore
             {
                 return null;
             }
-            throw new InvalidOperationException($"读取 Windows 凭据失败（{error}）");
+            throw new InvalidOperationException(UiStrings.Current.CredentialReadFailed(error));
         }
 
         try
@@ -56,7 +56,7 @@ internal sealed class CredentialStore
         var normalized = secret.Trim();
         if (normalized.Length == 0)
         {
-            throw new InvalidOperationException("API Key 不能为空");
+            throw new InvalidOperationException(UiStrings.Current.MissingApiKey);
         }
 
         var bytes = Encoding.Unicode.GetBytes(normalized);
@@ -76,7 +76,7 @@ internal sealed class CredentialStore
             if (!CredWrite(ref credential, 0))
             {
                 throw new InvalidOperationException(
-                    $"保存 Windows 凭据失败（{Marshal.GetLastWin32Error()}）");
+                    UiStrings.Current.CredentialWriteFailed(Marshal.GetLastWin32Error()));
             }
         }
         finally

@@ -105,7 +105,7 @@ let descriptors = TranslationProviderCatalog.descriptors
 expect(descriptors.count == TranslationProviderID.allCases.count, "提供方目录应覆盖所有提供方")
 expect(
     TranslationProviderCatalog.descriptor(for: .appleSystem).isAvailable,
-    "苹果系统翻译应是当前可用提供方"
+    "系统翻译应是当前可用提供方"
 )
 expect(
     TranslationProviderCatalog.descriptor(for: .deepSeek).isAvailable,
@@ -117,23 +117,23 @@ expect(
 )
 expect(
     TranslationProviderCatalog.descriptor(for: .volcengine).isAvailable,
-    "火山引擎应标记为当前可用提供方"
+    "火山方舟应标记为当前可用提供方"
 )
 expect(
     TranslationProviderCatalog.descriptor(for: .xAI).isAvailable,
-    "xAI Grok 应标记为当前可用提供方"
+    "Grok 应标记为当前可用提供方"
 )
 expect(
     TranslationProviderCatalog.descriptor(for: .relay).isAvailable,
-    "中转站 API 应标记为当前可用提供方"
+    "自定义服务应标记为当前可用提供方"
 )
 expect(
     TranslationProviderCatalog.descriptor(for: .localModel).isAvailable,
-    "Gemma 4 本地模型应标记为当前可用提供方"
+    "本地模型应标记为当前可用提供方"
 )
 expect(
-    TranslationProviderCatalog.descriptor(for: .localModel).name == "Gemma 4 本地",
-    "本地提供方应明确显示 Gemma 4"
+    TranslationProviderCatalog.descriptor(for: .localModel).name == "本地模型",
+    "本地提供方应使用通用产品名称"
 )
 expect(
     LocalModelCatalog.gemma4.defaultEndpoint == "http://127.0.0.1:1234/v1/chat/completions",
@@ -229,11 +229,23 @@ expect(
     "贴近原文不得使用语气"
 )
 
-expect(TranslationLanguage.allCases.count == 12, "国内版应提供十二种常用目标语言")
+expect(TranslationLanguage.allCases.count == 13, "国内版应提供十三种常用目标语言")
 expect(
     Set(TranslationLanguage.allCases.map(\.rawValue)).count
         == TranslationLanguage.allCases.count,
     "目标语言代码不得重复"
+)
+expect(TranslationLanguage(rawValue: "zh-Hans") == .chinese, "中文目标语言应使用 zh-Hans")
+let chinesePrompt = TranslationPromptBuilder.systemPrompt(
+    for: TextTranslationRequest(
+        sourceText: "Hello",
+        sourceLanguage: "auto",
+        targetLanguage: .chinese
+    )
+)
+expect(
+    chinesePrompt.contains("Detect the source language and translate to zh-Hans"),
+    "中文目标语言应自动识别源语言"
 )
 let japanesePreferences = TranslationPreferences(
     providerID: .qwen,
@@ -445,38 +457,51 @@ expect(volcPayload["source_text"] as? String == "你好", "火山请求应发送
 expect(volcPayload["full_input_context"] == nil, "火山请求不得携带完整输入框上下文")
 
 StubURLProtocol.respond = { _ in (401, "{\"error\":{\"message\":\"bad key\"}}") }
-var stubErrorText: String?
+var httpFailure: (
+    providerID: TranslationProviderID,
+    statusCode: Int,
+    message: String?
+)?
 do {
     _ = try await stubChatProvider.translate(
         TextTranslationRequest(sourceText: "你好", targetLanguage: .english)
     )
+} catch let error as APITranslationError {
+    if case let .httpFailure(providerID, statusCode, message) = error {
+        httpFailure = (providerID, statusCode, message)
+    }
 } catch {
-    stubErrorText = error.localizedDescription
 }
-expect(stubErrorText?.contains("401") == true, "错误信息应包含状态码")
-expect(stubErrorText?.contains("bad key") == true, "错误信息应包含服务端原因")
-expect(stubErrorText?.contains("DeepSeek") == true, "错误信息应点名提供方")
+expect(httpFailure?.statusCode == 401, "错误应携带状态码")
+expect(httpFailure?.message == "bad key", "错误应携带服务端原因")
+expect(httpFailure?.providerID == .deepSeek, "错误应点名提供方")
 
 StubURLProtocol.respond = { _ in (200, "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"   \"}}]}") }
-var emptyResponseText: String?
+var emptyResponseCaptured = false
 do {
     _ = try await stubChatProvider.translate(
         TextTranslationRequest(sourceText: "你好", targetLanguage: .english)
     )
+} catch let error as APITranslationError {
+    if case .emptyResponse = error {
+        emptyResponseCaptured = true
+    }
 } catch {
-    emptyResponseText = error.localizedDescription
 }
-expect(emptyResponseText?.contains("没有返回翻译结果") == true, "空译文应报无结果")
+expect(emptyResponseCaptured, "空译文应报无结果")
 
 StubURLProtocol.respond = { _ in (200, "not-json") }
-var invalidResponseText: String?
+var invalidResponseCaptured = false
 do {
     _ = try await stubChatProvider.translate(
         TextTranslationRequest(sourceText: "你好", targetLanguage: .english)
     )
+} catch let error as APITranslationError {
+    if case .invalidResponse = error {
+        invalidResponseCaptured = true
+    }
 } catch {
-    invalidResponseText = error.localizedDescription
 }
-expect(invalidResponseText?.contains("无效响应") == true, "非法 JSON 应报无效响应")
+expect(invalidResponseCaptured, "非法 JSON 应报无效响应")
 
 print("KEYICore checks passed: \(checkCount)")

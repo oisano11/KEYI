@@ -53,27 +53,24 @@ struct InterfaceStrings: Sendable {
     var statusTranslating: String { isEnglish ? "Translating" : "正在翻译" }
     var statusSuccess: String { isEnglish ? "Translation complete" : "翻译完成" }
 
-    var translateCurrentInput: String {
-        isEnglish ? "Translate Current Input" : "立即翻译"
-    }
-    var translationMethod: String { isEnglish ? "Provider" : "翻译方式" }
+    var translationMethod: String { isEnglish ? "Translation" : "翻译服务" }
     var current: String { isEnglish ? "Current" : "当前" }
-    var targetLanguage: String { isEnglish ? "Target" : "目标语言" }
-    var scene: String { isEnglish ? "Scene" : "场合" }
-    var style: String { isEnglish ? "Tone" : "语气" }
+    var targetLanguage: String { isEnglish ? "Language" : "目标语言" }
+    var scene: String { isEnglish ? "Context" : "使用场景" }
+    var style: String { isEnglish ? "Style" : "表达风格" }
     var interfaceLanguage: String { isEnglish ? "Language" : "界面语言" }
-    var apiManagement: String { isEnglish ? "Model API" : "模型 API" }
+    var apiManagement: String { isEnglish ? "Translation Services" : "翻译服务" }
     var localModel: String { isEnglish ? "Local Model" : "本地模型" }
-    var hotKey: String { isEnglish ? "Hotkey" : "热键" }
+    var hotKey: String { isEnglish ? "Keyboard Shortcut" : "快捷键" }
     var hotKeySettings: String {
-        isEnglish ? "Hotkey Settings..." : "设置热键..."
+        isEnglish ? "Edit Shortcut..." : "设置快捷键..."
     }
     var restoreDefault: String { isEnglish ? "Restore Default" : "恢复默认" }
     var grantAccessibility: String {
-        isEnglish ? "Grant Access" : "辅助授权"
+        isEnglish ? "Grant Permission" : "授予辅助功能权限"
     }
     var openAccessibilitySettings: String {
-        isEnglish ? "Accessibility Settings" : "辅助设置"
+        isEnglish ? "Open Accessibility Settings..." : "打开辅助功能设置..."
     }
     var exit: String { isEnglish ? "Quit KEYI" : "退出 KEYI 可译" }
     var unavailable: String { isEnglish ? "Unavailable" : "待接入" }
@@ -96,12 +93,12 @@ struct InterfaceStrings: Sendable {
 
     func providerName(_ provider: TranslationProviderID) -> String {
         switch provider {
-        case .appleSystem: isEnglish ? "Apple Translation" : "苹果系统翻译"
+        case .appleSystem: isEnglish ? "System Translation" : "系统翻译"
         case .deepSeek: "DeepSeek"
         case .qwen: isEnglish ? "Qwen" : "通义千问"
-        case .volcengine: isEnglish ? "Volcengine" : "火山引擎"
-        case .xAI: "xAI Grok"
-        case .relay: isEnglish ? "Relay API" : "中转站 API"
+        case .volcengine: isEnglish ? "Volcano Ark" : "火山方舟"
+        case .xAI: "Grok"
+        case .relay: isEnglish ? "Custom Service" : "自定义服务"
         case .localModel: localModel
         }
     }
@@ -129,6 +126,7 @@ struct InterfaceStrings: Sendable {
     func languageName(_ language: TranslationLanguage) -> String {
         switch language {
         case .english: english
+        case .chinese: isEnglish ? "Chinese" : "中文"
         case .japanese: isEnglish ? "Japanese" : "日语"
         case .korean: isEnglish ? "Korean" : "韩语"
         case .french: isEnglish ? "French" : "法语"
@@ -190,23 +188,23 @@ struct InterfaceStrings: Sendable {
     ) -> String {
         if !supportsScene {
             return isEnglish
-                ? "Scene and tone apply only to model APIs"
-                : "场合与语气仅适用于模型 API"
+                ? "Context and style are available with model services"
+                : "使用场景和表达风格仅适用于模型服务"
         }
         if !supportsStyle {
             switch scene {
             case .business:
                 return isEnglish
-                    ? "Business prioritizes accuracy; tone is disabled"
-                    : "商务优先准确，不使用语气"
+                    ? "Business prioritizes accuracy; style is unavailable"
+                    : "商务优先准确，不使用表达风格"
             case .faithful:
                 return isEnglish
-                    ? "Faithful mode keeps the source; tone is disabled"
-                    : "贴近原文，不使用语气"
+                    ? "Faithful mode keeps the source; style is unavailable"
+                    : "贴近原文，不使用表达风格"
             default:
                 return isEnglish
-                    ? "Scene supports all target languages; tone applies to English"
-                    : "场合适用于全部目标语言；语气仅适用于英语"
+                    ? "Context supports all languages; style applies to English"
+                    : "使用场景适用于全部目标语言；表达风格仅适用于英语"
             }
         }
         return ""
@@ -259,7 +257,7 @@ struct InterfaceStrings: Sendable {
     var missingModel: String { isEnglish ? "Model name is required" : "模型名不能为空" }
     var emptySource: String { isEnglish ? "There is no text to translate" : "没有可翻译的文本" }
     var invalidAPIResponse: String {
-        isEnglish ? "The model API returned an invalid response" : "模型 API 返回了无效响应"
+        isEnglish ? "The translation service returned an invalid response" : "翻译服务返回了无效响应"
     }
     func emptyAPIResponse(_ provider: String) -> String {
         isEnglish ? "\(provider) returned no translation" : "\(provider) 没有返回翻译结果"
@@ -274,7 +272,7 @@ struct InterfaceStrings: Sendable {
         isEnglish ? "Translation failed: \(detail)" : "翻译失败：\(detail)"
     }
     func configureProviderFirst(_ provider: String) -> String {
-        isEnglish ? "Configure \(provider) API first" : "请先配置 \(provider) API"
+        isEnglish ? "Set up \(provider) first" : "请先配置 \(provider)"
     }
     var noFocusedWindow: String {
         isEnglish ? "No recently used input window found" : "没有找到最近使用的输入窗口"
@@ -286,29 +284,30 @@ struct InterfaceStrings: Sendable {
     var writingInput: String { isEnglish ? "Writing to current input" : "正在写回当前输入框" }
     var translationComplete: String { isEnglish ? "Translation complete" : "翻译完成" }
     func selectedProvider(_ provider: String) -> String {
-        isEnglish ? "Selected \(provider)" : "已选择 \(provider)"
+        isEnglish ? "Using \(provider)" : "正在使用 \(provider)"
     }
     func savedProvider(_ provider: String) -> String {
-        isEnglish ? "Saved \(provider) API" : "已保存 \(provider) API"
+        isEnglish ? "Saved \(provider)" : "已保存 \(provider)"
     }
     func hotKeyUpdated(_ value: String) -> String {
-        isEnglish ? "Hotkey updated to \(value)" : "快捷键已更新为 \(value)"
+        isEnglish ? "Keyboard shortcut updated to \(value)" : "快捷键已更新为 \(value)"
     }
     func hotKeyUnavailable(_ value: String) -> String {
         isEnglish
-            ? "Hotkey \(value) could not be registered; another app may be using it."
+            ? "Keyboard shortcut \(value) could not be registered; another app may be using it."
             : "快捷键 \(value) 无法注册，可能已被其他应用占用。"
     }
     var saveHotKeyFailed: String {
         isEnglish
-            ? "Could not save the hotkey, and the previous hotkey could not be restored. Please set it again."
+            ? "Could not save the keyboard shortcut or restore the previous one. Set it again in Settings."
             : "保存快捷键失败，且原快捷键恢复失败，请重新设置"
     }
     var hotKeyRegistrationFailed: String {
-        isEnglish ? "Global hotkey registration failed; set it again from the menu" : "全局快捷键注册失败，请从菜单重新设置"
+        isEnglish ? "Global keyboard shortcut registration failed; set it again in Settings."
+            : "全局快捷键注册失败，请在设置中重新设置"
     }
     func fallbackHotKey(_ value: String) -> String {
-        isEnglish ? "The previous hotkey was unavailable; restored \(value)" : "原快捷键不可用，已恢复 \(value)"
+        isEnglish ? "The previous keyboard shortcut was unavailable; restored \(value)" : "原快捷键不可用，已恢复 \(value)"
     }
     var timeoutOrCancelled: String {
         isEnglish ? "Translation timed out or was cancelled" : "翻译请求超时或已取消"
@@ -318,8 +317,8 @@ struct InterfaceStrings: Sendable {
     var credentialInvalidAccount: String { isEnglish ? "Invalid credential name" : "凭据名称无效" }
     var credentialUnreadable: String {
         isEnglish
-            ? "API Key could not be read. Save it again in Model API."
-            : "API Key 无法读取，请在“模型 API”中重新保存一次"
+            ? "API Key could not be read. Save it again in Translation Services."
+            : "API Key 无法读取，请在“翻译服务”中重新保存一次"
     }
     var credentialWriteFailed: String { isEnglish ? "Could not save API Key" : "API Key 保存失败" }
 
@@ -355,7 +354,7 @@ struct InterfaceStrings: Sendable {
     }
 
     var providerUnavailable: String {
-        isEnglish ? "The selected translation provider is unavailable" : "当前翻译提供方暂不可用"
+        isEnglish ? "The selected translation service is unavailable" : "当前翻译服务暂不可用"
     }
 
     var accessibilityNoFocusedText: String {
@@ -391,12 +390,97 @@ struct InterfaceStrings: Sendable {
 
     func hotKeyListenerError(_ status: Int32) -> String {
         isEnglish
-            ? "Hotkey listener initialization failed (\(status))"
+            ? "Keyboard shortcut listener initialization failed (\(status))"
             : "快捷键监听初始化失败（\(status)）"
     }
     func hotKeyConflict(_ displayName: String, status: Int32) -> String {
         isEnglish
-            ? "Hotkey \(displayName) could not be registered (\(status))"
+            ? "Keyboard shortcut \(displayName) could not be registered (\(status))"
             : "快捷键 \(displayName) 无法注册，可能已被占用（\(status)）"
+    }
+
+    // MARK: 设置窗口
+
+    var settings: String { isEnglish ? "Settings..." : "设置..." }
+    var settingsTitle: String { isEnglish ? "Settings" : "设置" }
+    var translationTab: String { isEnglish ? "Translation" : "翻译" }
+    var providersTab: String { isEnglish ? "Services" : "翻译服务" }
+    var hotKeyTab: String { isEnglish ? "Shortcuts" : "快捷键" }
+    var generalTab: String { isEnglish ? "General" : "通用" }
+    var translationPreferencesDescription: String {
+        isEnglish
+            ? "Choose the language and writing preferences for your translations."
+            : "设置译文语言，以及模型服务的表达偏好。"
+    }
+    var systemTranslationOptionsInfo: String {
+        isEnglish
+            ? "System Translation uses the language you choose and keeps its own writing behavior."
+            : "系统翻译会使用所选语言，并由系统决定表达方式。"
+    }
+    var translationServicesDescription: String {
+        isEnglish
+            ? "Set up the services available for translation."
+            : "配置可用于翻译的服务。"
+    }
+    var localModelEndpointPlaceholder: String {
+        "http://127.0.0.1:1234/v1/chat/completions"
+    }
+    var localModelPlaceholder: String {
+        isEnglish ? "Model identifier in LM Studio" : "LM Studio 中的模型标识"
+    }
+    var shortcutsDescription: String {
+        isEnglish
+            ? "Use a keyboard shortcut to translate text in the current app."
+            : "使用全局快捷键翻译当前应用中的文本。"
+    }
+    var generalSettingsDescription: String {
+        isEnglish
+            ? "Manage the app language and required macOS access."
+            : "管理界面语言和 KEYI 所需的 macOS 权限。"
+    }
+    var savedHint: String { isEnglish ? "Saved" : "已保存" }
+    var useAsCurrent: String { isEnglish ? "Use for Translation" : "用于翻译" }
+    var currentlyUsed: String { isEnglish ? "Used for Translation" : "正在用于翻译" }
+    var providerConfiguredSuffix: String { isEnglish ? "Configured" : "已配置" }
+    var providerNotConfiguredLabel: String { isEnglish ? "Not configured" : "未配置" }
+    var cloudProviderSection: String {
+        isEnglish ? "Cloud Services" : "云端翻译服务"
+    }
+    var localModelSectionLabel: String {
+        isEnglish ? "Local model (LM Studio)" : "本地模型（LM Studio）"
+    }
+    var accessibilityPermissionSection: String {
+        isEnglish ? "Accessibility permission" : "辅助功能权限"
+    }
+    var accessibilityGranted: String {
+        isEnglish ? "Granted" : "已授权"
+    }
+    var accessibilityNotGranted: String {
+        isEnglish ? "Not granted" : "未授权"
+    }
+
+}
+
+extension APITranslationError {
+    /// 云端提供方错误的用户可见文案；语言跟随当前界面设置。
+    public var localizedMessage: String {
+        let strings = InterfaceStrings.current
+        switch self {
+        case .emptySource:
+            return strings.emptySource
+        case .invalidResponse:
+            return strings.invalidAPIResponse
+        case let .emptyResponse(providerID):
+            return strings.emptyAPIResponse(strings.providerName(providerID))
+        case let .httpFailure(providerID, statusCode, message):
+            let detail = message.flatMap {
+                $0.isEmpty ? nil : $0
+            }
+            return strings.apiRequestFailed(
+                strings.providerName(providerID),
+                statusCode: statusCode,
+                detail: detail
+            )
+        }
     }
 }

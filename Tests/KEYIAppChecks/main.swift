@@ -36,6 +36,8 @@ expect(
     store.localModelEndpoint() == "http://127.0.0.1:1234/v1/chat/completions",
     "本地模型端点应回退 LM Studio 默认值"
 )
+expect(store.configuredLocalModelEndpoint() == nil, "未配置本地模型时设置页地址应为空")
+expect(store.configuredLocalModelName() == nil, "未配置本地模型时设置页模型名应为空")
 expect(
     !store.hasStoredAPIConfiguration(for: .deepSeek),
     "未保存过的提供方应视为未配置"
@@ -87,6 +89,11 @@ try store.saveLocalModelConfiguration(
     model: " local-model "
 )
 expect(store.localModelName() == "local-model", "本地模型名应去空白保存")
+expect(
+    store.configuredLocalModelEndpoint() == "http://127.0.0.1:9123/v1/chat/completions",
+    "已配置本地模型时设置页应显示保存的地址"
+)
+expect(store.configuredLocalModelName() == "local-model", "已配置本地模型时设置页应显示保存的模型名")
 let localConfiguration = try store.localModelConfiguration()
 expect(localConfiguration.endpoint.port == 9123, "本地配置端口应保留")
 expect(
@@ -94,6 +101,43 @@ expect(
     "本地配置应携带 Gemma 4 加载键"
 )
 settingsDefaults.removePersistentDomain(forName: settingsSuiteName)
+
+let legacyTestSourceSuiteName = "KEYIAppChecks-Legacy-Test-Source-\(UUID().uuidString)"
+let legacyTestSuiteName = "KEYIAppChecks-Legacy-Test-\(UUID().uuidString)"
+let legacyTestSourceDefaults = UserDefaults(suiteName: legacyTestSourceSuiteName)!
+let legacyTestDefaults = UserDefaults(suiteName: legacyTestSuiteName)!
+legacyTestSourceDefaults.set(
+    LocalModelCatalog.gemma4.defaultEndpoint,
+    forKey: "translation.local.endpoint"
+)
+legacyTestSourceDefaults.set(
+    LocalModelCatalog.gemma4.defaultModel,
+    forKey: "translation.local.gemma4.model"
+)
+let cleanedLegacyTestStore = TranslationSettingsStore(
+    defaults: legacyTestDefaults,
+    legacyDefaults: legacyTestSourceDefaults
+)
+expect(
+    cleanedLegacyTestStore.configuredLocalModelEndpoint() == nil
+        && cleanedLegacyTestStore.configuredLocalModelName() == nil,
+    "迁移进来的旧测试本地模型配置应自动清除"
+)
+try cleanedLegacyTestStore.saveLocalModelConfiguration(
+    endpoint: LocalModelCatalog.gemma4.defaultEndpoint,
+    model: LocalModelCatalog.gemma4.defaultModel
+)
+let reloadedLegacyTestStore = TranslationSettingsStore(
+    defaults: legacyTestDefaults,
+    legacyDefaults: legacyTestSourceDefaults
+)
+expect(
+    reloadedLegacyTestStore.configuredLocalModelEndpoint() == LocalModelCatalog.gemma4.defaultEndpoint
+        && reloadedLegacyTestStore.configuredLocalModelName() == LocalModelCatalog.gemma4.defaultModel,
+    "用户主动保存默认本地模型配置后不应在下次启动被删除"
+)
+legacyTestSourceDefaults.removePersistentDomain(forName: legacyTestSourceSuiteName)
+legacyTestDefaults.removePersistentDomain(forName: legacyTestSuiteName)
 
 // MARK: - HanYi -> KEYI UserDefaults migration
 
@@ -309,5 +353,55 @@ expect(
     "迁移后应删除明文文件"
 )
 try CredentialStore.delete(account: credentialAccount)
+
+// MARK: - 云端提供方错误按界面语言渲染
+
+let apiError = APITranslationError.httpFailure(
+    providerID: .qwen,
+    statusCode: 401,
+    message: "bad key"
+)
+expect(
+    renderedAPIMessage(apiError, language: .simplifiedChinese)
+        == "通义千问 请求失败（HTTP 401：bad key）",
+    "中文界面应渲染中文错误"
+)
+expect(
+    renderedAPIMessage(apiError, language: .english)
+        == "Qwen request failed (HTTP 401: bad key)",
+    "英文界面应渲染英文错误"
+)
+expect(
+    renderedAPIMessage(.emptyResponse(providerID: .relay), language: .english)
+        == "Custom Service returned no translation",
+    "空译文错误应带提供方名"
+)
+
+let englishStrings = InterfaceStrings(language: .english)
+expect(englishStrings.settings == "Settings...", "设置命令应保留省略号")
+expect(englishStrings.settingsTitle == "Settings", "设置窗口标题不应带省略号")
+expect(englishStrings.translationMethod == "Translation", "英文翻译服务菜单应使用 Translation")
+expect(englishStrings.targetLanguage == "Language", "英文目标语言应使用 Language")
+expect(englishStrings.scene == "Context", "英文使用场景应使用 Context")
+expect(englishStrings.style == "Style", "英文表达风格应使用 Style")
+expect(englishStrings.languageName(.chinese) == "Chinese", "英文界面应显示 Chinese")
+
+/// 在指定界面语言下渲染错误，避免依赖测试机的系统语言。
+@MainActor
+private func renderedAPIMessage(
+    _ error: APITranslationError,
+    language: InterfaceLanguage
+) -> String {
+    let saved = UserDefaults.standard.string(forKey: InterfaceLanguageStorage.key)
+    UserDefaults.standard.set(language.rawValue, forKey: InterfaceLanguageStorage.key)
+    defer {
+        if let saved {
+            UserDefaults.standard.set(saved, forKey: InterfaceLanguageStorage.key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: InterfaceLanguageStorage.key)
+        }
+    }
+    return error.localizedMessage
+}
 
 print("KEYI App checks passed: \(checkCount)")

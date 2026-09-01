@@ -16,12 +16,12 @@ struct MenuBarContent: View {
     var body: some View {
         let strings = model.strings
 
-        Text(model.state.title(using: strings))
-
-        Button(strings.translateCurrentInput) {
-            model.triggerFromMenu()
+        Button(strings.settings) {
+            model.openSettings(.translation)
         }
-        .disabled(model.isBusy)
+        .keyboardShortcut(",")
+
+        Divider()
 
         Menu(strings.translationMethod) {
             ForEach(model.providerDescriptors) { provider in
@@ -43,9 +43,7 @@ struct MenuBarContent: View {
             }
         }
 
-        Text(strings.currentProvider(model.selectedProviderID))
-
-        Menu(strings.target(model.selectedTargetLanguage)) {
+        Menu(strings.targetLanguage) {
             ForEach(TranslationLanguage.allCases) { language in
                 Button {
                     model.selectTargetLanguage(language)
@@ -62,107 +60,36 @@ struct MenuBarContent: View {
         }
         .disabled(model.isBusy)
 
-        Menu(strings.scene(model.selectedScene)) {
-            ForEach(TranslationScene.allCases) { scene in
-                Button {
-                    model.selectScene(scene)
-                } label: {
-                    HStack {
-                        Text(strings.sceneName(scene))
-                        if scene == model.selectedScene {
-                            Spacer()
-                            Image(systemName: "checkmark")
+        if model.supportsTranslationCustomization {
+            Menu(strings.scene) {
+                ForEach(TranslationScene.allCases) { scene in
+                    Button {
+                        model.selectScene(scene)
+                    } label: {
+                        HStack {
+                            Text(strings.sceneName(scene))
+                            if scene == model.selectedScene {
+                                Spacer()
+                                Image(systemName: "checkmark")
+                            }
                         }
                     }
                 }
             }
-        }
-        .disabled(!model.supportsTranslationCustomization)
 
-        Menu(strings.style(model.selectedEnglishStyle)) {
-            ForEach(EnglishStyle.allCases) { englishStyle in
-                Button {
-                    model.selectEnglishStyle(englishStyle)
-                } label: {
-                    HStack {
-                        Text(strings.styleName(englishStyle))
-                        if englishStyle == model.selectedEnglishStyle {
-                            Spacer()
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-            }
-        }
-        .disabled(!model.supportsEnglishStyleCustomization)
-
-        let hint = strings.sceneStyleHint(
-            supportsScene: model.supportsTranslationCustomization,
-            supportsStyle: model.supportsEnglishStyleCustomization,
-            scene: model.selectedScene
-        )
-        if !hint.isEmpty {
-            Text(hint)
-        }
-
-        Menu(strings.apiManagement) {
-            ForEach(model.apiProviderProfiles) { profile in
-                Button {
-                    model.configureAPI(for: profile.providerID)
-                } label: {
-                    HStack {
-                        Text(strings.providerName(profile.providerID))
-                        Spacer()
-                        if model.isAPIConfigured(profile.providerID) {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-            }
-        }
-
-        Button(strings.configureLocalModel + "…") {
-            model.configureLocalModel()
-        }
-
-        if model.selectedProviderID == .localModel {
-            Text(strings.localModelValue(model.localModelName))
-            Text(strings.serviceValue(model.localModelEndpoint))
-        }
-
-        if !model.hasAccessibilityPermission {
-            Button(strings.grantAccessibility) {
-                model.requestAccessibilityPermission()
-            }
-        }
-
-        Divider()
-
-        Text("\(strings.hotKey)  \(model.hotKeyConfiguration.displayName)")
-
-        Button(strings.hotKeySettings) {
-            model.configureHotKey()
-        }
-
-        Button(strings.restoreDefault) {
-            model.restoreDefaultHotKey()
-        }
-        .disabled(model.hotKeyConfiguration == .default)
-
-        Button(strings.openAccessibilitySettings) {
-            model.openAccessibilitySettings()
-        }
-
-        Menu(strings.interfaceLanguage(model.interfaceLanguage)) {
-            ForEach(InterfaceLanguage.allCases, id: \.self) { language in
-                Button {
-                    model.selectInterfaceLanguage(language)
-                } label: {
-                    HStack {
-                        Text(strings.interfaceLanguageName(language))
-                        if language == model.interfaceLanguage {
-                            Spacer()
-                            Image(systemName: "checkmark")
+            if model.supportsEnglishStyleCustomization {
+                Menu(strings.style) {
+                    ForEach(EnglishStyle.allCases) { englishStyle in
+                        Button {
+                            model.selectEnglishStyle(englishStyle)
+                        } label: {
+                            HStack {
+                                Text(strings.styleName(englishStyle))
+                                if englishStyle == model.selectedEnglishStyle {
+                                    Spacer()
+                                    Image(systemName: "checkmark")
+                                }
+                            }
                         }
                     }
                 }

@@ -5,7 +5,7 @@
 当前 Release 附带 Windows x64 实验安装器和便携程序。两者未使用 Authenticode 签名，SmartScreen 可能显示警告；Windows 10/11 原生安装、升级和重启验收尚未完成。
 
 构建后，在 Windows 10/11 x64 运行 `KEYI-Setup.exe`，并在系统托盘右键 KEYI 可译图标。
-1. 打开“添加/管理模型 API”，配置 DeepSeek、通义千问、火山引擎或 xAI Grok。
+1. 打开“设置... → 翻译服务”，配置 DeepSeek、通义千问、火山方舟或 Grok。
 2. 将焦点留在输入框：选中文本时只翻译选区；未选中时翻译全文。
 3. 按默认快捷键 `Alt+T`，英文结果会原地写回。
 4. “版本与发布说明”只说明公开版发布边界，不下载或执行安装器。
@@ -44,6 +44,6 @@ Scripts/build-windows.sh
 
 ## 支持边界
 
-- Windows 版使用模型 API，不提供 Apple 系统翻译。
+- Windows 版使用翻译服务，不提供 Apple 系统翻译。
 - 输入框需支持 Windows UI Automation 的 TextPattern 或 ValuePattern。
 - KEYI 可译与目标应用权限级别必须一致；Windows 默认禁止普通权限进程向管理员权限窗口发送输入。

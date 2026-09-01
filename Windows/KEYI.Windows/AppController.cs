@@ -3,7 +3,7 @@ using System.Net.Http;
 
 namespace KEYI.Windows;
 
-internal sealed class AppController : IDisposable
+internal sealed class AppController : IDisposable, ISettingsDialogHost
 {
     private readonly SettingsStore _settingsStore = new();
     private readonly CredentialStore _credentials = new();
@@ -19,9 +19,9 @@ internal sealed class AppController : IDisposable
     private readonly ToolStripMenuItem _sceneMenu = new();
     private readonly ToolStripMenuItem _styleMenu = new();
     private readonly ToolStripMenuItem _interfaceLanguageMenu = new();
-    private readonly ToolStripMenuItem _apiMenu = new();
     private readonly ToolStripMenuItem _hotKeyLabel = new() { Enabled = false };
     private readonly ToolStripMenuItem _translateItem = new();
+    private readonly ToolStripMenuItem _settingsItem = new();
     private readonly ToolStripMenuItem _configureHotKeyItem = new();
     private readonly ToolStripMenuItem _restoreHotKeyItem = new();
     private readonly ToolStripMenuItem _checkUpdatesItem = new();
@@ -70,12 +70,10 @@ internal sealed class AppController : IDisposable
 
     private void BuildMenu()
     {
-        _menu.Items.Add(_statusItem);
+        _settingsItem.Text = _strings.Settings;
+        _settingsItem.Click += (_, _) => ShowSettings();
+        _menu.Items.Add(_settingsItem);
         _menu.Items.Add(new ToolStripSeparator());
-
-        _translateItem.Text = _strings.TranslateCurrentInput;
-        _translateItem.Click += async (_, _) => await TranslateFromTrayAsync();
-        _menu.Items.Add(_translateItem);
 
         foreach (var provider in ProviderCatalog.All)
         {
@@ -86,13 +84,6 @@ internal sealed class AppController : IDisposable
             };
             providerItem.Click += (_, _) => SelectProvider(provider.Id);
             _providerMenu.DropDownItems.Add(providerItem);
-
-            var apiItem = new ToolStripMenuItem(_strings.ProviderName(provider.Id))
-            {
-                Tag = provider.Id
-            };
-            apiItem.Click += (_, _) => ConfigureProvider(provider.Id);
-            _apiMenu.DropDownItems.Add(apiItem);
         }
 
         foreach (var scene in Enum.GetValues<TranslationScene>())
@@ -137,19 +128,6 @@ internal sealed class AppController : IDisposable
         _menu.Items.Add(_sceneMenu);
         _menu.Items.Add(_styleMenu);
         _menu.Items.Add(_styleScopeHint);
-        BuildInterfaceLanguageMenu();
-        _menu.Items.Add(_interfaceLanguageMenu);
-        _menu.Items.Add(_apiMenu);
-        _menu.Items.Add(new ToolStripSeparator());
-        _menu.Items.Add(_hotKeyLabel);
-
-        _configureHotKeyItem.Text = _strings.HotKeySettings;
-        _configureHotKeyItem.Click += (_, _) => ConfigureHotKey();
-        _menu.Items.Add(_configureHotKeyItem);
-
-        _restoreHotKeyItem.Text = _strings.RestoreDefault;
-        _restoreHotKeyItem.Click += (_, _) => ApplyHotKey(new HotKeySettings());
-        _menu.Items.Add(_restoreHotKeyItem);
         _menu.Items.Add(new ToolStripSeparator());
 
         _checkUpdatesItem.Text = _strings.CheckUpdates;
@@ -222,7 +200,7 @@ internal sealed class AppController : IDisposable
             if (string.IsNullOrWhiteSpace(apiKey))
             {
                 SetStatus(_strings.ConfigureProviderFirst(provider.Id));
-                ConfigureProvider(provider.Id);
+                ShowSettings(provider.Id);
                 return;
             }
 
@@ -231,7 +209,9 @@ internal sealed class AppController : IDisposable
             var providerSettings = _settings.Providers[provider.Id];
             if (!Uri.TryCreate(providerSettings.Endpoint, UriKind.Absolute, out var endpoint))
             {
-                throw new TranslationException(_strings.InvalidEndpoint);
+                throw new TranslationException(
+                    TranslationErrorKind.InvalidEndpoint,
+                    "Provider endpoint is not an absolute URL");
             }
 
             SetStatus(_strings.UsingProvider(provider.Id));
@@ -265,10 +245,16 @@ internal sealed class AppController : IDisposable
 
     private void SelectProvider(ProviderId providerId)
     {
-        if (!_credentials.HasSecret(providerId) && !ConfigureProvider(providerId))
+        if (!_credentials.HasSecret(providerId))
         {
+            ShowSettings(providerId);
             return;
         }
+        ApplySelectedProvider(providerId);
+    }
+
+    private void ApplySelectedProvider(ProviderId providerId)
+    {
         var previousProvider = _settings.SelectedProvider;
         _settings.SelectedProvider = providerId;
         if (!SaveSettings())
@@ -281,54 +267,60 @@ internal sealed class AppController : IDisposable
         SetStatus(_strings.SelectedProvider(providerId));
     }
 
-    private bool ConfigureProvider(ProviderId providerId)
-    {
-        var provider = ProviderCatalog.Get(providerId);
-        var hasStoredKey = _credentials.HasSecret(providerId);
-        using var form = new ProviderConfigurationForm(
-            provider,
-            _settings.Providers[providerId],
-            hasStoredKey,
-            _strings);
-        if (form.ShowDialog() != DialogResult.OK)
-        {
-            return false;
-        }
+    // MARK: 设置窗口（ISettingsDialogHost）
 
-        try
+    private SettingsForm? _settingsForm;
+
+    public void ShowSettings(ProviderId? preselectProvider = null)
+    {
+        if (_settingsForm is { IsDisposed: false } existing)
         {
-            if (form.ApiKey.Length > 0)
-            {
-                _credentials.Save(providerId, form.ApiKey);
-            }
-            if (!_credentials.HasSecret(providerId))
-            {
-                throw new InvalidOperationException(_strings.MissingApiKey);
-            }
-            var previousSettings = _settings.Providers[providerId];
-            _settings.Providers[providerId] = new ProviderSettings
-            {
-                Endpoint = form.Endpoint,
-                Model = form.ModelName
-            };
-            if (!SaveSettings())
-            {
-                _settings.Providers[providerId] = previousSettings;
-                UpdateMenuChecks();
-                return false;
-            }
-            UpdateMenuChecks();
-            SetStatus(_strings.SavedProvider(providerId));
-            return true;
+            existing.Activate();
+            return;
         }
-        catch (Exception exception)
+        var form = new SettingsForm(this, preselectProvider);
+        form.FormClosed += (_, _) =>
         {
-            MessageBox.Show(
-                UserMessage(exception),
-                _strings.AppName,
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
-            return false;
+            if (ReferenceEquals(_settingsForm, form))
+            {
+                _settingsForm = null;
+            }
+        };
+        _settingsForm = form;
+        form.Show();
+    }
+
+    AppSettings ISettingsDialogHost.Settings => _settings;
+
+    UiStrings ISettingsDialogHost.Strings => _strings;
+
+    CredentialStore ISettingsDialogHost.Credentials => _credentials;
+
+    bool ISettingsDialogHost.Persist() => SaveSettings();
+
+    void ISettingsDialogHost.ApplyHotKey(HotKeySettings settings) => ApplyHotKey(settings);
+
+    void ISettingsDialogHost.SelectProviderFromSettings(ProviderId providerId) =>
+        ApplySelectedProvider(providerId);
+
+    void ISettingsDialogHost.ChangeInterfaceLanguage(InterfaceLanguage language)
+    {
+        var reopen = _settingsForm is { IsDisposed: false };
+        SelectInterfaceLanguage(language);
+        if (!reopen)
+        {
+            return;
+        }
+        // 等旧窗口走完 FormClosed 再开新窗口，避免字段被误清。
+        var context = SynchronizationContext.Current;
+        void Reopen() => ShowSettings();
+        if (context is not null)
+        {
+            context.Post(_ => Reopen(), null);
+        }
+        else
+        {
+            Reopen();
         }
     }
 
@@ -424,20 +416,12 @@ internal sealed class AppController : IDisposable
         {
             item.Checked = (EnglishStyle)item.Tag! == _settings.EnglishStyle;
         }
-        foreach (ToolStripMenuItem item in _apiMenu.DropDownItems)
-        {
-            var providerId = (ProviderId)item.Tag!;
-            var providerName = _strings.ProviderName(providerId);
-            item.Text = _credentials.HasSecret(providerId)
-                ? $"{providerName} ✓"
-                : providerName;
-        }
 
-        _providerMenu.Text = _strings.CurrentProvider(_settings.SelectedProvider);
-        _targetLanguageMenu.Text = _strings.Target(_settings.TargetLanguage);
+        _providerMenu.Text = _strings.TranslationMethod;
+        _targetLanguageMenu.Text = _strings.TargetLanguage;
         _targetLanguageMenu.Enabled = !_busy;
-        _sceneMenu.Text = _strings.SceneValue(_settings.Scene);
-        _styleMenu.Text = _strings.StyleValue(_settings.EnglishStyle);
+        _sceneMenu.Text = _strings.Scene;
+        _styleMenu.Text = _strings.Style;
         var styleEnabled = TranslationPromptBuilder.UsesEnglishStyle(
             _settings.TargetLanguage,
             _settings.Scene);
@@ -525,6 +509,7 @@ internal sealed class AppController : IDisposable
     private string UserMessage(Exception exception) => exception switch
     {
         OperationCanceledException => _strings.TimeoutOrCancelled,
+        TranslationException translation => _strings.TranslationFailure(translation),
         _ when !string.IsNullOrWhiteSpace(exception.Message) => exception.Message,
         _ => _strings.OperationFailed
     };

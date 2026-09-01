@@ -40,12 +40,12 @@ public static class ProviderCatalog
             "qwen-plus"),
         new(
             ProviderId.Volcengine,
-            "火山引擎",
+            "火山方舟",
             "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
             "doubao-seed-1-6-250615"),
         new(
             ProviderId.XAI,
-            "xAI Grok",
+            "Grok",
             "https://api.x.ai/v1/chat/completions",
             "grok-4.5")
     ];
@@ -75,6 +75,7 @@ public enum EnglishStyle
 public enum TranslationLanguage
 {
     English,
+    Chinese,
     Japanese,
     Korean,
     French,
@@ -113,6 +114,7 @@ public static class TranslationOptionNames
     public static string DisplayName(this TranslationLanguage language) => language switch
     {
         TranslationLanguage.English => "英语",
+        TranslationLanguage.Chinese => "中文",
         TranslationLanguage.Japanese => "日语",
         TranslationLanguage.Korean => "韩语",
         TranslationLanguage.French => "法语",
@@ -130,6 +132,7 @@ public static class TranslationOptionNames
     public static string LanguageCode(this TranslationLanguage language) => language switch
     {
         TranslationLanguage.English => "en",
+        TranslationLanguage.Chinese => "zh-Hans",
         TranslationLanguage.Japanese => "ja",
         TranslationLanguage.Korean => "ko",
         TranslationLanguage.French => "fr",

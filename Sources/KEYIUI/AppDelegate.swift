@@ -9,7 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         category: "Lifecycle"
     )
     private var translationPanel: NSPanel?
-    private var statusOverlay: TopStatusOverlayController?
+    private var statusOverlay: TranslationIslandController?
     private var hotKey: GlobalHotKey?
     private var workspaceObservers: [NSObjectProtocol] = []
 
@@ -17,7 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         logger.info("KEYI 可译 launched")
         NSApp.setActivationPolicy(.accessory)
         installTranslationHost()
-        statusOverlay = TopStatusOverlayController(model: .shared)
+        statusOverlay = TranslationIslandController(model: .shared)
         AppModel.shared.setHotKeyRegistrationHandler { [weak self] configuration in
             guard let self else { return }
             try self.replaceHotKey(with: configuration)

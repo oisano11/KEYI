@@ -17,13 +17,13 @@ public enum TranslationProviderID: String, CaseIterable, Codable, Sendable {
 
     public var displayName: String {
         switch self {
-        case .appleSystem: "苹果系统翻译"
+        case .appleSystem: "系统翻译"
         case .deepSeek: "DeepSeek"
         case .qwen: "通义千问"
-        case .volcengine: "火山引擎"
-        case .xAI: "xAI Grok"
-        case .relay: "中转站 API"
-        case .localModel: "Gemma 4 本地"
+        case .volcengine: "火山方舟"
+        case .xAI: "Grok"
+        case .relay: "自定义服务"
+        case .localModel: "本地模型"
         }
     }
 
@@ -257,6 +257,7 @@ public enum EnglishStyle: String, CaseIterable, Codable, Identifiable, Sendable 
 
 public enum TranslationLanguage: String, CaseIterable, Codable, Identifiable, Sendable {
     case english = "en"
+    case chinese = "zh-Hans"
     case japanese = "ja"
     case korean = "ko"
     case french = "fr"
@@ -274,6 +275,7 @@ public enum TranslationLanguage: String, CaseIterable, Codable, Identifiable, Se
     public var displayName: String {
         switch self {
         case .english: "英语"
+        case .chinese: "中文"
         case .japanese: "日语"
         case .korean: "韩语"
         case .french: "法语"
