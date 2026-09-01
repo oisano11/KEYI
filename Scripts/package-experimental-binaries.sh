@@ -63,24 +63,20 @@ hdiutil create \
 echo "构建 Windows 实验包..."
 "$ROOT_DIR/Scripts/build-windows.sh"
 WINDOWS_SETUP="$WINDOWS_DIR/KEYI-Setup.exe"
-WINDOWS_PORTABLE="$WINDOWS_DIR/app/KEYI.exe"
-if [[ ! -f "$WINDOWS_SETUP" || ! -f "$WINDOWS_PORTABLE" ]]; then
+if [[ ! -f "$WINDOWS_SETUP" ]]; then
     echo "错误：Windows 构建产物缺失。" >&2
     exit 1
 fi
 
 WINDOWS_SETUP_ARTIFACT="$OUTPUT_DIR/KEYI-v${VERSION}-Windows-x64-experimental-setup.exe"
-WINDOWS_PORTABLE_ARTIFACT="$OUTPUT_DIR/KEYI-v${VERSION}-Windows-x64-experimental-portable.exe"
 cp "$WINDOWS_SETUP" "$WINDOWS_SETUP_ARTIFACT"
-cp "$WINDOWS_PORTABLE" "$WINDOWS_PORTABLE_ARTIFACT"
 
 MAC_SHA256="$(shasum -a 256 "$MAC_ZIP" | awk '{print $1}')"
 MAC_DMG_SHA256="$(shasum -a 256 "$MAC_DMG" | awk '{print $1}')"
 WINDOWS_SETUP_SHA256="$(shasum -a 256 "$WINDOWS_SETUP_ARTIFACT" | awk '{print $1}')"
-WINDOWS_PORTABLE_SHA256="$(shasum -a 256 "$WINDOWS_PORTABLE_ARTIFACT" | awk '{print $1}')"
 CHECKSUMS="$OUTPUT_DIR/SHA256SUMS.txt"
 {
-    shasum -a 256 "$MAC_DMG" "$MAC_ZIP" "$WINDOWS_SETUP_ARTIFACT" "$WINDOWS_PORTABLE_ARTIFACT" \
+    shasum -a 256 "$MAC_DMG" "$MAC_ZIP" "$WINDOWS_SETUP_ARTIFACT" \
         | sed "s#${OUTPUT_DIR}/##"
 } > "$CHECKSUMS"
 
@@ -94,7 +90,7 @@ printf '%s\n' \
     "打开 DMG 后，将 KEYI 可译拖到 Applications。" \
     "首次打开请在 Finder 中右键选择“打开”，不要关闭系统级 Gatekeeper。" \
     "" \
-    "Windows：安装器和便携程序未使用 Authenticode 签名，SmartScreen 可能显示警告。" \
+    "Windows：仅提供安装器，未使用 Authenticode 签名，SmartScreen 可能显示警告。" \
     "" \
     "发布前请核对 SHA256SUMS.txt，并仅在信任源码、提交和构建环境时运行。" \
     "本实验版不启用自动更新；Windows 10/11 原生安装、升级、重启和权限验收尚未完成。" \
@@ -115,7 +111,6 @@ jq -n \
     --arg mac_zip_sha256 "$MAC_SHA256" \
     --arg mac_dmg_sha256 "$MAC_DMG_SHA256" \
     --arg windows_setup_sha256 "$WINDOWS_SETUP_SHA256" \
-    --arg windows_portable_sha256 "$WINDOWS_PORTABLE_SHA256" \
     '{
       product: "KEYI 可译",
       version: $version,
@@ -133,11 +128,9 @@ jq -n \
       },
       windows: {
         setup_artifact: ("KEYI-v" + $version + "-Windows-x64-experimental-setup.exe"),
-        portable_artifact: ("KEYI-v" + $version + "-Windows-x64-experimental-portable.exe"),
         signature: $windows_signature,
         native_acceptance: $native_acceptance,
-        setup_sha256: $windows_setup_sha256,
-        portable_sha256: $windows_portable_sha256
+        setup_sha256: $windows_setup_sha256
       },
       auto_update: false
     }' > "$MANIFEST"

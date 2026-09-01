@@ -1,0 +1,104 @@
+name: Publish Windows Installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing GitHub Release tag to update
+        required: true
+      release_ref:
+        description: Source commit or tag used to build the installer
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_ref }}
+      - name: Build Windows installer
+        run: Scripts/build-windows.sh
+      - name: Upload installer and refresh release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_REF: ${{ inputs.release_ref }}
+        run: |
+          set -euo pipefail
+          artifact_dir="release-assets"
+          mkdir "$artifact_dir"
+
+          gh release download "$RELEASE_TAG" \
+            --pattern 'BINARY-MANIFEST.json' \
+            --dir "$artifact_dir"
+
+          version="$(jq -r '.version' "$artifact_dir/BINARY-MANIFEST.json")"
+          dmg_name="$(jq -r '.macos.dmg_artifact' "$artifact_dir/BINARY-MANIFEST.json")"
+          zip_name="$(jq -r '.macos.artifact' "$artifact_dir/BINARY-MANIFEST.json")"
+          installer_name="KEYI-v${version}-Windows-x64-experimental-setup.exe"
+          cp .build/windows/KEYI-Setup.exe "$artifact_dir/$installer_name"
+          gh release download "$RELEASE_TAG" \
+            --pattern "$dmg_name" \
+            --pattern "$zip_name" \
+            --dir "$artifact_dir"
+
+          setup_sha256="$(shasum -a 256 "$artifact_dir/$installer_name" | awk '{print $1}')"
+          jq \
+            --arg source_commit "$RELEASE_REF" \
+            --arg setup_name "$installer_name" \
+            --arg setup_sha256 "$setup_sha256" \
+            'del(.windows.portable_artifact, .windows.portable_sha256)
+             | .source_commit = $source_commit
+             | .windows.setup_artifact = $setup_name
+             | .windows.setup_sha256 = $setup_sha256' \
+            "$artifact_dir/BINARY-MANIFEST.json" > "$artifact_dir/manifest.json"
+          mv "$artifact_dir/manifest.json" "$artifact_dir/BINARY-MANIFEST.json"
+
+          printf '%s\n' \
+            'KEYI 可译 v1.1.6 二进制实验版' \
+            '' \
+            '这是未公证/未受平台发行者信任的实验构建，不是受支持的正式安装包。' \
+            '' \
+            'macOS：DMG 与 ZIP 内的应用使用 Codex++ Local Signing 本机签名，未经过 Apple 公证。首次打开请在 Finder 中右键选择“打开”。' \
+            'Windows：仅提供 x64 安装器，未使用 Authenticode 签名，SmartScreen 可能显示警告。' \
+            '' \
+            '发布前请核对 SHA256SUMS.txt，并仅在信任源码、提交和构建环境时运行。' \
+            '本实验版不启用自动更新；Windows 10/11 原生安装、升级、重启和权限验收尚未完成。' \
+            > "$artifact_dir/BINARY-README.txt"
+
+          (
+            cd "$artifact_dir"
+            shasum -a 256 \
+              "$dmg_name" \
+              "$zip_name" \
+              "$installer_name" > SHA256SUMS.txt
+          )
+
+          gh release upload "$RELEASE_TAG" \
+            "$artifact_dir/$installer_name" \
+            "$artifact_dir/BINARY-MANIFEST.json" \
+            "$artifact_dir/BINARY-README.txt" \
+            "$artifact_dir/SHA256SUMS.txt" \
+            --clobber
+
+          cat > "$artifact_dir/release-notes.md" <<'EOF'
+          ## 本次更新
+
+          - 新增 macOS arm64 DMG：打开后将“KEYI 可译”拖入 Applications。
+          - 保留 macOS ZIP，方便手动解压。
+          - Windows 仅提供 x64 安装器，已基于最新公开代码重新构建。
+          - 包含新版设置界面、中文目标语言和统一的中英文产品语义。
+
+          ## 发布边界
+
+          - macOS 使用 `Codex++ Local Signing`，未经过 Apple 公证；首次打开如被拦截，请在 Finder 中右键应用并选择“打开”。
+          - Windows 安装器未使用 Authenticode，SmartScreen 可能显示“未知发布者”。
+          - 安装器内外程序版本与 SHA-256 已核对一致。
+          - macOS CoreChecks 97 项、AppChecks 61 项、Windows CoreChecks 12 项均已通过。
+          - 这是实验二进制预发布，不启用自动更新。请先核对 SHA-256，并避免用于高敏感内容。
+          EOF
+          gh release edit "$RELEASE_TAG" --notes-file "$artifact_dir/release-notes.md"
