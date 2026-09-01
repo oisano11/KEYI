@@ -37,17 +37,13 @@ EOF
     fi
     TIMESTAMP_ARGS=(--timestamp)
 else
-    # 开发证书可保持本机 TCC/辅助功能授权稳定；没有时退回 ad-hoc。
+    # 优先使用本机可用签名；没有时退回 ad-hoc。
     if [[ -n "${KEYI_SIGNING_IDENTITY:-}" ]]; then
         SIGNING_IDENTITY="$KEYI_SIGNING_IDENTITY"
     else
-        for candidate in "Codex++ Local Signing" "KEYI Development Signing"; do
-            if security find-identity -v -p codesigning 2>/dev/null \
-                | grep -Fq "\"$candidate\""; then
-                SIGNING_IDENTITY="$candidate"
-                break
-            fi
-        done
+        SIGNING_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+            | sed -nE 's/^[[:space:]]*[0-9]+\)[[:space:]]+[0-9A-F]+[[:space:]]+"(.*)"$/\1/p' \
+            | head -n 1 || true)"
         SIGNING_IDENTITY="${SIGNING_IDENTITY:--}"
     fi
     TIMESTAMP_ARGS=(--timestamp=none)

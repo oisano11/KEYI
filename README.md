@@ -47,7 +47,7 @@ KEYI 可译是 macOS 和 Windows 的桌面输入翻译工具。选中文字，�
 
 #### 第一次打开
 
-1. 本实验版使用 `Codex++ Local Signing`，未经过 Apple 公证。若 macOS 提示无法验证开发者，在 Finder 中按住 Control 点按“KEYI 可译”，选择“打开”。
+1. 本实验版使用本机开发签名，未经过 Apple 公证。若 macOS 提示无法验证开发者，在 Finder 中按住 Control 点按“KEYI 可译”，选择“打开”。
 2. 若仍被拦截，先尝试打开一次，然后到“系统设置 → 隐私与安全性”底部选择“仍要打开”，再重新打开应用。不要关闭 Gatekeeper 或执行来历不明的终端命令。
 3. 打开 KEYI 的“设置 → 通用”，授予“辅助功能”权限；也可在“系统设置 → 隐私与安全性 → 辅助功能”中启用 KEYI 可译。授权后退出并重新打开 KEYI。
 
@@ -76,7 +76,7 @@ Scripts/build-app.sh
 
 构建产物为 `.build/KEYI 可译.app`。首次使用时，在“系统设置 → 隐私与安全性 → 辅助功能”中允许 KEYI 可译。
 
-默认构建仅用于本机开发；没有 Apple Developer 证书时会优先使用本机开发证书（例如 `Codex++ Local Signing`），找不到时才使用 ad-hoc 签名。两者都不能作为受支持的正式分发包。源码 Release 不需要 Apple 证书。
+默认构建仅用于本机开发；没有 Apple Developer 证书时会优先使用本机可用的开发签名，找不到时才使用 ad-hoc 签名。两者都不能作为受支持的正式分发包。源码 Release 不需要 Apple 证书。
 
 macOS 正式二进制发布前，必须加入 Apple Developer Program，在开发者后台登记 Bundle ID `com.keyi.input-translator`，创建并安装 `Developer ID Application` 证书，然后显式执行：
 

@@ -32,7 +32,6 @@ KEYI_SIGNING_MODE=development "$ROOT_DIR/Scripts/build-app.sh"
 codesign --verify --deep --strict --verbose=2 "$MAC_APP"
 
 MAC_IDENTITY="$(codesign -dv --verbose=4 "$MAC_APP" 2>&1 | sed -n 's/^Authority=//p' | head -n 1 || true)"
-MAC_TEAM_ID="$(codesign -dv --verbose=4 "$MAC_APP" 2>&1 | sed -n 's/^TeamIdentifier=//p' | head -n 1 || true)"
 if spctl --assess --type execute "$MAC_APP" >/dev/null 2>&1; then
     MAC_GATEKEEPER="accepted"
 else
@@ -86,7 +85,7 @@ printf '%s\n' \
     "" \
     "这是未公证/未受平台发行者信任的实验构建，不是受支持的正式安装包。" \
     "" \
-    "macOS：DMG 与 ZIP 内的应用使用本机开发签名（${MAC_SIGNATURE}，身份：${MAC_IDENTITY:-none}，Team ID：${MAC_TEAM_ID:-not-set}），Gatekeeper 状态：${MAC_GATEKEEPER}。" \
+    "macOS：DMG 与 ZIP 内的应用使用本机开发签名，Gatekeeper 状态：${MAC_GATEKEEPER}。" \
     "打开 DMG 后，将 KEYI 可译拖到 Applications。" \
     "首次打开请在 Finder 中右键选择“打开”，不要关闭系统级 Gatekeeper。" \
     "" \
@@ -103,8 +102,6 @@ jq -n \
     --arg source_commit "$SOURCE_COMMIT" \
     --arg channel "experimental-binary" \
     --arg mac_signature "$MAC_SIGNATURE" \
-    --arg mac_identity "${MAC_IDENTITY:-none}" \
-    --arg mac_team_id "${MAC_TEAM_ID:-not-set}" \
     --arg mac_gatekeeper "$MAC_GATEKEEPER" \
     --arg windows_signature "unsigned" \
     --arg native_acceptance "not-performed" \
@@ -120,8 +117,6 @@ jq -n \
         dmg_artifact: ("KEYI-v" + $version + "-macOS-" + $mac_arch + "-experimental.dmg"),
         artifact: ("KEYI-v" + $version + "-macOS-" + $mac_arch + "-experimental.zip"),
         signature: $mac_signature,
-        identity: $mac_identity,
-        team_identifier: $mac_team_id,
         gatekeeper: $mac_gatekeeper,
         dmg_sha256: $mac_dmg_sha256,
         sha256: $mac_zip_sha256
