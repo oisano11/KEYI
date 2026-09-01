@@ -53,7 +53,7 @@ jobs:
             --arg source_commit "$RELEASE_REF" \
             --arg setup_name "$installer_name" \
             --arg setup_sha256 "$setup_sha256" \
-            'del(.windows.portable_artifact, .windows.portable_sha256)
+            'del(.windows.portable_artifact, .windows.portable_sha256, .macos.identity, .macos.team_identifier)
              | .source_commit = $source_commit
              | .windows.setup_artifact = $setup_name
              | .windows.setup_sha256 = $setup_sha256' \
@@ -65,7 +65,7 @@ jobs:
             '' \
             '这是未公证/未受平台发行者信任的实验构建，不是受支持的正式安装包。' \
             '' \
-            'macOS：DMG 与 ZIP 内的应用使用 Codex++ Local Signing 本机签名，未经过 Apple 公证。首次打开请在 Finder 中右键选择“打开”。' \
+            'macOS：DMG 与 ZIP 内的应用使用本机开发签名，未经过 Apple 公证。首次打开请在 Finder 中右键选择“打开”。' \
             'Windows：仅提供 x64 安装器，未使用 Authenticode 签名，SmartScreen 可能显示警告。' \
             '' \
             '发布前请核对 SHA256SUMS.txt，并仅在信任源码、提交和构建环境时运行。' \
@@ -97,7 +97,7 @@ jobs:
 
           ## 发布边界
 
-          - macOS 使用 `Codex++ Local Signing`，未经过 Apple 公证；首次打开如被拦截，请在 Finder 中右键应用并选择“打开”。
+          - macOS 使用本机开发签名，未经过 Apple 公证；首次打开如被拦截，请在 Finder 中右键应用并选择“打开”。
           - Windows 安装器未使用 Authenticode，SmartScreen 可能显示“未知发布者”。
           - 安装器内外程序版本与 SHA-256 已核对一致。
           - macOS CoreChecks 97 项、AppChecks 61 项、Windows CoreChecks 12 项均已通过。
