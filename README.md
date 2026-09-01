@@ -1,12 +1,26 @@
-# KEYI 可译
+<div align="center">
+  <h1>KEYI 可译</h1>
+  <p><em>In-place translation for macOS and Windows. Translate where you type.</em></p>
+</div>
+
+<p align="center">
+  <a href="https://github.com/oisano11/KEYI/actions/workflows/ci.yml"><img src="https://github.com/oisano11/KEYI/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/oisano11/KEYI/releases"><img src="https://img.shields.io/github/v/release/oisano11/KEYI?display_name=tag&style=flat-square" alt="Release"></a>
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License"></a>
+  <a href="https://github.com/oisano11/KEYI/stargazers"><img src="https://img.shields.io/github/stars/oisano11/KEYI?style=flat-square" alt="Stars"></a>
+</p>
 
 > 不用复制，不用切换；在哪里输入，就在哪里翻译。
+
+KEYI is an open-source desktop translator for macOS and Windows. Select text, or place the cursor in an editable input field, press a global shortcut, and the translation is written back in the same app.
 
 KEYI 可译是 macOS 和 Windows 的桌面输入翻译工具。选中文字，或将光标留在可编辑输入框，按一次全局快捷键，即可翻译成目标语言并原地写回。
 
 它不替换系统输入法，也不会自动发送消息。你可以选择系统翻译、云端翻译服务或本地模型，并自行管理所用服务和凭据。
 
-## 核心能力
+**Use cases:** email, chat, documents, social posts, support replies, and any compatible text field where copy/paste interrupts your flow.
+
+## Features / 核心能力
 
 - **原地翻译**：优先处理选中文字；没有选区时处理当前输入框全文。结果直接写回，不会自动发送。
 - **全局快捷键**：在任何支持的输入框中触发翻译，无需复制、切换到网页或粘贴回来。
@@ -16,7 +30,16 @@ KEYI 可译是 macOS 和 Windows 的桌面输入翻译工具。选中文字，�
 - **语境与表达**：模型服务可按聊天、发帖、商务或贴近原文调整翻译；目标语言为英语时可选择表达风格。系统翻译保留系统自身的语言处理方式。
 - **数据边界清晰**：云端服务默认只接收待翻译文本；API Key 保存在当前用户的系统凭据存储，不写入仓库。
 
-## 快速开始
+## How It Works
+
+1. Open an editable text field in any supported app.
+2. Select text, or leave the cursor in the field to translate its current contents.
+3. Press the global shortcut (`⌥T` on macOS, `Alt+T` on Windows by default).
+4. KEYI translates the text and writes the result back without sending the message.
+
+中文：选中文字优先；没有选区时翻译当前输入框。翻译完成后直接写回原位置，不自动发送。
+
+## Quick Start / 快速开始
 
 ### macOS
 
