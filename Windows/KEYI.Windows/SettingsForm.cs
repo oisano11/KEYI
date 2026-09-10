@@ -305,7 +305,7 @@ internal sealed class SettingsForm : Form
         _providerList.Items.Clear();
         foreach (var provider in ProviderCatalog.All)
         {
-            _providerList.Items.Add(provider);
+            _providerList.Items.Add(provider.Id);
         }
         if (selected is ProviderId id && ProviderCatalog.All.Any(p => p.Id == id))
         {

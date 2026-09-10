@@ -17,7 +17,9 @@ internal sealed class FocusedTextClient
     private const int CommitVerificationAttempts = 40;
     private static readonly TimeSpan CommitVerificationInterval = TimeSpan.FromMilliseconds(50);
 
-    public async Task<TextSnapshot> CaptureAsync()
+    public Task<TextSnapshot> CaptureAsync() => CaptureAsync(null);
+
+    private async Task<TextSnapshot> CaptureAsync(ClipboardTransaction? transaction)
     {
         var foregroundWindow = NativeMethods.GetForegroundWindow();
         if (foregroundWindow == nint.Zero)
@@ -64,7 +66,7 @@ internal sealed class FocusedTextClient
                 {
                     throw new FocusedTextException(UiStrings.Current.ControlDoesNotSupportText);
                 }
-                return await CaptureClipboardSelectionAsync(foregroundWindow, runtimeId);
+                return await CaptureClipboardSelectionAsync(foregroundWindow, runtimeId, transaction);
 
             default:
                 throw new FocusedTextException(UiStrings.Current.ControlDoesNotSupportText);
@@ -79,27 +81,22 @@ internal sealed class FocusedTextClient
         }
         await ValidateAsync(snapshot);
 
-        var clipboard = ClipboardSnapshot.Capture();
-        uint translationSequence = 0;
+        var transaction = CaptureClipboardTransaction();
         try
         {
             ClipboardAccess.SetText(translatedText);
-            translationSequence = NativeMethods.GetClipboardSequenceNumber();
+            transaction.RecordChange(NativeMethods.GetClipboardSequenceNumber());
 
             if (snapshot.Scope == ReplacementScope.Full)
             {
                 NativeMethods.SendControlChord(VirtualKeyA);
             }
             NativeMethods.SendControlChord(VirtualKeyV);
-            await VerifyCommittedAsync(snapshot, translatedText);
+            await VerifyCommittedAsync(snapshot, translatedText, transaction);
         }
         finally
         {
-            if (translationSequence != 0
-                && NativeMethods.GetClipboardSequenceNumber() == translationSequence)
-            {
-                await clipboard.RestoreAsync(translationSequence);
-            }
+            await transaction.RestoreAsync();
         }
     }
 
@@ -143,9 +140,11 @@ internal sealed class FocusedTextClient
 
     private async Task<TextSnapshot> CaptureClipboardSelectionAsync(
         nint foregroundWindow,
-        int[] runtimeId)
+        int[] runtimeId,
+        ClipboardTransaction? transaction)
     {
-        var clipboard = ClipboardSnapshot.Capture();
+        var ownsTransaction = transaction is null;
+        transaction ??= CaptureClipboardTransaction();
         var originalSequence = NativeMethods.GetClipboardSequenceNumber();
         uint copiedSequence = 0;
         try
@@ -156,6 +155,7 @@ internal sealed class FocusedTextClient
             {
                 throw new FocusedTextException(UiStrings.Current.ClipboardSelectionRequired);
             }
+            transaction.RecordChange(copiedSequence);
 
             var selectedText = ClipboardAccess.GetUnicodeText();
             EnsureSource(selectedText);
@@ -170,10 +170,9 @@ internal sealed class FocusedTextClient
         }
         finally
         {
-            if (copiedSequence != 0
-                && NativeMethods.GetClipboardSequenceNumber() == copiedSequence)
+            if (ownsTransaction)
             {
-                await clipboard.RestoreAsync(copiedSequence);
+                await transaction.RestoreAsync();
             }
         }
     }
@@ -212,11 +211,12 @@ internal sealed class FocusedTextClient
 
     private async Task VerifyCommittedAsync(
         TextSnapshot snapshot,
-        string translatedText)
+        string translatedText,
+        ClipboardTransaction transaction)
     {
         if (snapshot.ReadMode == FocusedTextReadMode.ClipboardSelection)
         {
-            await VerifyClipboardSelectionCommitAsync(snapshot, translatedText);
+            await VerifyClipboardSelectionCommitAsync(snapshot, translatedText, transaction);
             return;
         }
 
@@ -258,7 +258,8 @@ internal sealed class FocusedTextClient
 
     private async Task VerifyClipboardSelectionCommitAsync(
         TextSnapshot snapshot,
-        string translatedText)
+        string translatedText,
+        ClipboardTransaction transaction)
     {
         if (NativeMethods.GetForegroundWindow() != snapshot.ForegroundWindow)
         {
@@ -267,12 +268,18 @@ internal sealed class FocusedTextClient
 
         await Task.Delay(CommitVerificationInterval);
         NativeMethods.SendShiftLeft(StringInfo.ParseCombiningCharacters(translatedText).Length);
-        var current = await CaptureAsync();
+        var current = await CaptureAsync(transaction);
         if (current.ReadMode != FocusedTextReadMode.ClipboardSelection
             || !string.Equals(current.SourceText, translatedText, StringComparison.Ordinal))
         {
             throw new FocusedTextException(UiStrings.Current.WriteBackNotConfirmed);
         }
+    }
+
+    private static ClipboardTransaction CaptureClipboardTransaction()
+    {
+        var snapshot = ClipboardSnapshot.Capture();
+        return new ClipboardTransaction(NativeMethods.GetClipboardSequenceNumber, snapshot.RestoreAsync);
     }
 
     private static string? ReadFocusedText()

@@ -5,13 +5,50 @@ import Foundation
 import KEYICore
 
 @MainActor
-final class AccessibilityTextClient {
-    enum WriteMode {
+protocol FocusedTextAccess {
+    var isTrusted: Bool { get }
+    func requestTrustPrompt()
+    func capture() async throws -> AccessibilityTextClient.Snapshot
+    func replace(
+        snapshot: AccessibilityTextClient.Snapshot,
+        with translatedText: String,
+        isCurrent: @escaping @MainActor () -> Bool
+    ) async throws
+}
+
+@MainActor
+final class AccessibilityTextClient: FocusedTextAccess {
+    enum WriteMode: Equatable {
         case value
         case selectedText
         case browserPaste
         case keyboardPaste
         case terminalPaste
+    }
+
+    struct TargetIdentity {
+        let element: AXUIElement?
+        var window: AXUIElement? = nil
+        var parent: AXUIElement? = nil
+        var identifier: String? = nil
+        var role: String? = nil
+
+        func matches(_ current: TargetIdentity, allowsRecreatedElement: Bool = false) -> Bool {
+            guard let element, let currentElement = current.element else { return false }
+            if let window {
+                guard let currentWindow = current.window, CFEqual(window, currentWindow) else { return false }
+            }
+            if CFEqual(element, currentElement) { return true }
+            // A shared value is not identity. Only a stable identifier in the same
+            // parent and window can establish continuity after a web rerender.
+            guard allowsRecreatedElement,
+                  window != nil,
+                  let parent, let currentParent = current.parent,
+                  CFEqual(parent, currentParent),
+                  let identifier, !identifier.isEmpty, identifier == current.identifier,
+                  let role, role == current.role else { return false }
+            return true
+        }
     }
 
     final class Snapshot {
@@ -22,6 +59,8 @@ final class AccessibilityTextClient {
         let selection: FocusedTextSelection
         let writeMode: WriteMode
         let translationContext: String?
+        let target: TargetIdentity
+        let isTerminalBuffer: Bool
 
         init(
             element: AXUIElement?,
@@ -30,7 +69,9 @@ final class AccessibilityTextClient {
             originalSelectedRange: NSRange,
             selection: FocusedTextSelection,
             writeMode: WriteMode,
-            translationContext: String? = nil
+            translationContext: String? = nil,
+            target: TargetIdentity? = nil,
+            isTerminalBuffer: Bool = false
         ) {
             self.element = element
             self.applicationProcessIdentifier = applicationProcessIdentifier
@@ -39,6 +80,8 @@ final class AccessibilityTextClient {
             self.selection = selection
             self.writeMode = writeMode
             self.translationContext = translationContext
+            self.target = target ?? TargetIdentity(element: element)
+            self.isTerminalBuffer = isTerminalBuffer || writeMode == .terminalPaste
         }
     }
 
@@ -101,6 +144,7 @@ final class AccessibilityTextClient {
 
     private func captureFromAccessibility() async throws -> Snapshot {
         let element = try await focusedElement()
+        let target = targetIdentity(for: element)
 
         guard let value = try copyAttribute(kAXValueAttribute, from: element) as? String else {
             throw Error.unreadableText
@@ -119,7 +163,9 @@ final class AccessibilityTextClient {
                 originalValue: value,
                 originalSelectedRange: selectedRange,
                 selection: terminalSelection,
-                writeMode: .terminalPaste
+                writeMode: .terminalPaste,
+                target: target,
+                isTerminalBuffer: true
             )
         }
 
@@ -154,7 +200,9 @@ final class AccessibilityTextClient {
             originalSelectedRange: selectedRange,
             selection: selection,
             writeMode: mode,
-            translationContext: selection.text == value ? nil : value
+            translationContext: selection.text == value ? nil : value,
+            target: target,
+            isTerminalBuffer: isTerminalApplication(element)
         )
     }
 
@@ -162,6 +210,13 @@ final class AccessibilityTextClient {
         guard let application = frontmostTargetApplication() else {
             throw Error.noFocusedText
         }
+        let element = try await focusedElement()
+        let target = targetIdentity(for: element)
+        let isTerminalBuffer = Self.requiresTerminalOutputGuard(
+            bundleIdentifier: application.bundleIdentifier,
+            role: stringAttribute(kAXRoleAttribute, from: element),
+            valueIsSettable: (try? isSettable(kAXValueAttribute, on: element)) == true
+        )
 
         let pasteboard = NSPasteboard.general
         let pasteboardScope = ScopedPasteboard(pasteboard: pasteboard)
@@ -176,6 +231,7 @@ final class AccessibilityTextClient {
             guard allowsWholeTextKeyboardFallback(application) else {
                 throw Error.noFocusedText
             }
+            _ = try await requireTarget(target, processIdentifier: application.processIdentifier)
             guard postKeyCombo(virtualKey: CGKeyCode(kVK_ANSI_A)) else {
                 throw Error.noFocusedText
             }
@@ -188,14 +244,17 @@ final class AccessibilityTextClient {
         }
 
         guard !text.isEmpty else { throw Error.noFocusedText }
+        _ = try await requireTarget(target, processIdentifier: application.processIdentifier)
         let range = NSRange(location: 0, length: (text as NSString).length)
         return Snapshot(
-            element: nil,
+            element: element,
             applicationProcessIdentifier: application.processIdentifier,
             originalValue: text,
             originalSelectedRange: range,
             selection: FocusedTextSelection(text: text, range: range),
-            writeMode: .keyboardPaste
+            writeMode: .keyboardPaste,
+            target: target,
+            isTerminalBuffer: isTerminalBuffer
         )
     }
 
@@ -205,6 +264,7 @@ final class AccessibilityTextClient {
         isCurrent: @escaping @MainActor () -> Bool
     ) async throws {
         guard isTrusted else { throw Error.permissionRequired }
+        try Self.validateReplacement(translatedText, for: snapshot)
 
         if case .keyboardPaste = snapshot.writeMode {
             try await replaceUsingKeyboardPaste(
@@ -223,32 +283,11 @@ final class AccessibilityTextClient {
             return
         }
 
-        let currentElement: AXUIElement
-        do {
-            currentElement = try await focusedElement()
-        } catch Error.noFocusedText {
-            if case .browserPaste = snapshot.writeMode {
-                try await replaceUsingKeyboardPaste(
-                    snapshot: snapshot,
-                    translatedText: translatedText,
-                    isCurrent: isCurrent
-                )
-                return
-            }
-            throw Error.noFocusedText
-        }
-        guard let snapshotElement = snapshot.element,
-              CFEqual(currentElement, snapshotElement) else {
-            if case .browserPaste = snapshot.writeMode {
-                try await replaceUsingKeyboardPaste(
-                    snapshot: snapshot,
-                    translatedText: translatedText,
-                    isCurrent: isCurrent
-                )
-                return
-            }
-            throw Error.contentChanged
-        }
+        let currentElement = try await requireTarget(
+            snapshot.target,
+            processIdentifier: snapshot.applicationProcessIdentifier,
+            allowsRecreatedElement: snapshot.writeMode == .browserPaste
+        )
         let currentValue = try? copyAttribute(
             kAXValueAttribute,
             from: currentElement
@@ -256,14 +295,6 @@ final class AccessibilityTextClient {
         let currentRange = try? selectionRange(from: currentElement)
         guard currentValue == snapshot.originalValue,
               currentRange == snapshot.originalSelectedRange else {
-            if case .browserPaste = snapshot.writeMode {
-                try await replaceUsingKeyboardPaste(
-                    snapshot: snapshot,
-                    translatedText: translatedText,
-                    isCurrent: isCurrent
-                )
-                return
-            }
             throw Error.contentChanged
         }
 
@@ -296,6 +327,8 @@ final class AccessibilityTextClient {
                 translatedText: translatedText,
                 originalValue: snapshot.originalValue,
                 expectedValue: updatedValue,
+                target: snapshot.target,
+                processIdentifier: snapshot.applicationProcessIdentifier,
                 isCurrent: isCurrent
             )
             return
@@ -310,6 +343,40 @@ final class AccessibilityTextClient {
             on: currentElement,
             to: snapshot.selection.range.location + (translatedText as NSString).length
         )
+    }
+
+    static func validateReplacement(_ text: String, for snapshot: Snapshot) throws {
+        if snapshot.isTerminalBuffer && !TerminalCommandSelection.isSafeReplacement(text) {
+            throw Error.unsafeTerminalTranslation
+        }
+    }
+
+    private func targetIdentity(for element: AXUIElement) -> TargetIdentity {
+        TargetIdentity(
+            element: element,
+            window: elementAttribute(kAXWindowAttribute, from: element),
+            parent: elementAttribute(kAXParentAttribute, from: element),
+            identifier: stringAttribute(kAXIdentifierAttribute, from: element),
+            role: stringAttribute(kAXRoleAttribute, from: element)
+        )
+    }
+
+    private func requireTarget(
+        _ target: TargetIdentity,
+        processIdentifier: pid_t?,
+        allowsRecreatedElement: Bool = false
+    ) async throws -> AXUIElement {
+        guard let processIdentifier,
+              frontmostTargetApplication()?.processIdentifier == processIdentifier else {
+            throw Error.contentChanged
+        }
+        let currentElement = try await focusedElement()
+        guard frontmostTargetApplication()?.processIdentifier == processIdentifier,
+              target.matches(targetIdentity(for: currentElement),
+                             allowsRecreatedElement: allowsRecreatedElement) else {
+            throw Error.contentChanged
+        }
+        return currentElement
     }
 
     private func focusedElement() async throws -> AXUIElement {
@@ -392,22 +459,18 @@ final class AccessibilityTextClient {
         translatedText: String,
         isCurrent: @escaping @MainActor () -> Bool
     ) async throws {
-        guard let expectedProcessIdentifier = snapshot.applicationProcessIdentifier,
-              frontmostTargetApplication()?.processIdentifier == expectedProcessIdentifier else {
-            throw Error.contentChanged
-        }
+        _ = try await requireTarget(snapshot.target, processIdentifier: snapshot.applicationProcessIdentifier)
 
         let pasteboard = NSPasteboard.general
         let pasteboardScope = ScopedPasteboard(pasteboard: pasteboard)
         defer { pasteboardScope.restoreIfUnchanged() }
 
-        let selectionMatches = try await restoreExpectedKeyboardSelection(
-            snapshot: snapshot,
+        let selectedText = try await copyFocusedText(
             using: pasteboard,
             isCurrent: isCurrent
         )
         pasteboardScope.trackLatestChange()
-        guard selectionMatches else {
+        guard selectedText == snapshot.selection.text else {
             throw Error.contentChanged
         }
 
@@ -416,65 +479,12 @@ final class AccessibilityTextClient {
             throw Error.browserInputFailed
         }
         pasteboardScope.trackLatestChange()
-        guard frontmostTargetApplication()?.processIdentifier
-                == expectedProcessIdentifier else {
-            throw Error.contentChanged
-        }
+        _ = try await requireTarget(snapshot.target, processIdentifier: snapshot.applicationProcessIdentifier)
         try TranslationWriteBackGate.requireActive(isCurrent)
         guard postPasteShortcut() else {
             throw Error.browserInputFailed
         }
         await pause(120)
-    }
-
-    private func restoreExpectedKeyboardSelection(
-        snapshot: Snapshot,
-        using pasteboard: NSPasteboard,
-        isCurrent: @escaping @MainActor () -> Bool
-    ) async throws -> Bool {
-        if try await copyFocusedText(
-            using: pasteboard,
-            isCurrent: isCurrent
-        ) == snapshot.selection.text {
-            return true
-        }
-
-        // X 等受控编辑器重渲染后，原 AX 元素身份会变化。只要新版元素
-        // 仍暴露相同全文，就在新版元素上恢复原选区，再走真实粘贴事件。
-        if let element = try? await focusedElement(),
-           let currentValue = try? copyAttribute(
-               kAXValueAttribute,
-               from: element
-           ) as? String,
-           currentValue == snapshot.originalValue {
-            try TranslationWriteBackGate.requireActive(isCurrent)
-            if setSelectionRange(snapshot.selection.range, on: element) == .success {
-                await pause(40)
-                if try await copyFocusedText(
-                    using: pasteboard,
-                    isCurrent: isCurrent
-                ) == snapshot.selection.text {
-                    return true
-                }
-            }
-        }
-
-        // 新版 Chromium 可能短暂不暴露 AX 输入框。仅当原任务确实是翻译
-        // 整个输入框时才重新全选；复制结果必须与原文完全一致才能回写。
-        let originalLength = (snapshot.originalValue as NSString).length
-        guard snapshot.selection.range == NSRange(location: 0, length: originalLength),
-              snapshot.selection.text == snapshot.originalValue else {
-            return false
-        }
-        try TranslationWriteBackGate.requireActive(isCurrent)
-        guard postKeyCombo(virtualKey: CGKeyCode(kVK_ANSI_A)) else {
-            return false
-        }
-        await pause(80)
-        return try await copyFocusedText(
-            using: pasteboard,
-            isCurrent: isCurrent
-        ) == snapshot.originalValue
     }
 
     private func replaceTerminalCommand(
@@ -720,6 +730,18 @@ final class AccessibilityTextClient {
         } ?? false
     }
 
+    static func requiresTerminalOutputGuard(
+        bundleIdentifier: String?, role: String?, valueIsSettable: Bool
+    ) -> Bool {
+        guard let bundleIdentifier,
+              terminalBundleIdentifiers.contains(bundleIdentifier)
+                || terminalSelectionOnlyBundleIdentifiers.contains(bundleIdentifier) else { return false }
+        // Only a positively identified editable field is exempt; opaque terminal
+        // controls reached through keyboard fallback still need the guard.
+        let isEditableField = (role == "AXTextField" || role == "AXTextArea") && valueIsSettable
+        return !isEditableField
+    }
+
     private func isTerminalTextBuffer(_ element: AXUIElement) -> Bool {
         stringAttribute(kAXRoleAttribute, from: element) == "AXTextArea"
             && (try? isSettable(kAXValueAttribute, on: element)) == false
@@ -799,6 +821,8 @@ final class AccessibilityTextClient {
         translatedText: String,
         originalValue: String,
         expectedValue: String,
+        target: TargetIdentity,
+        processIdentifier: pid_t?,
         isCurrent: @escaping @MainActor () -> Bool
     ) async throws {
         try TranslationWriteBackGate.requireActive(isCurrent)
@@ -816,6 +840,13 @@ final class AccessibilityTextClient {
         pasteboardScope.trackLatestChange()
         defer { pasteboardScope.restoreIfUnchanged() }
 
+        let focusedBeforePaste = try await requireTarget(
+            target, processIdentifier: processIdentifier, allowsRecreatedElement: true
+        )
+        guard (try? selectionRange(from: focusedBeforePaste)) == range,
+              (try? copyAttribute(kAXValueAttribute, from: focusedBeforePaste) as? String) == originalValue else {
+            throw Error.contentChanged
+        }
         try TranslationWriteBackGate.requireActive(isCurrent)
         guard postPasteShortcut() else {
             throw Error.browserInputFailed
@@ -824,9 +855,12 @@ final class AccessibilityTextClient {
         let deadline = Date().addingTimeInterval(0.8)
         repeat {
             await pause(40)
+            let verificationElement = try await requireTarget(
+                target, processIdentifier: processIdentifier, allowsRecreatedElement: true
+            )
             if let value = try? copyAttribute(
                 kAXValueAttribute,
-                from: element
+                from: verificationElement
             ) as? String,
                value == expectedValue
                 || (value != originalValue && value.contains(translatedText)) {

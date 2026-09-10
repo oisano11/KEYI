@@ -43,6 +43,11 @@ let package = Package(
             name: "KEYIAppChecks",
             dependencies: ["KEYIUI"],
             path: "Tests/KEYIAppChecks"
+        ),
+        .executableTarget(
+            name: "KEYIRegressionChecks",
+            dependencies: ["KEYIUI"],
+            path: "Tests/KEYIRegressionChecks"
         )
     ]
 )

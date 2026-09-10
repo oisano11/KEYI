@@ -86,16 +86,19 @@ public struct OpenAICompatibleTranslationProvider: TranslationProvider {
             )
         }
 
-        let content: String?
+        let choice: ChatCompletionResponse.Choice?
         do {
-            content = try JSONDecoder().decode(
+            choice = try JSONDecoder().decode(
                 ChatCompletionResponse.self,
                 from: data
-            ).choices.first?.message.content
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+            ).choices.first
         } catch {
             throw APITranslationError.invalidResponse
         }
+        guard choice?.finishReason != "length" else {
+            throw APITranslationError.truncatedResponse(providerID: id)
+        }
+        let content = choice?.message.content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let content, !content.isEmpty else {
             throw APITranslationError.emptyResponse(providerID: id)
         }
@@ -119,6 +122,12 @@ private struct ChatCompletionResponse: Decodable, Sendable {
 
     struct Choice: Decodable, Sendable {
         let message: ChatMessage
+        let finishReason: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case message
+            case finishReason = "finish_reason"
+        }
     }
 }
 
@@ -136,6 +145,7 @@ public enum APITranslationError: Error {
     case emptySource
     case invalidResponse
     case emptyResponse(providerID: TranslationProviderID)
+    case truncatedResponse(providerID: TranslationProviderID)
     case httpFailure(
         providerID: TranslationProviderID,
         statusCode: Int,

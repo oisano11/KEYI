@@ -472,6 +472,11 @@ extension APITranslationError {
             return strings.invalidAPIResponse
         case let .emptyResponse(providerID):
             return strings.emptyAPIResponse(strings.providerName(providerID))
+        case let .truncatedResponse(providerID):
+            let provider = strings.providerName(providerID)
+            return strings.isEnglish
+                ? "\(provider) returned an incomplete translation; the source was not changed. Translate a shorter selection."
+                : "\(provider) 返回的译文不完整，原文未修改。请缩短选区后重试。"
         case let .httpFailure(providerID, statusCode, message):
             let detail = message.flatMap {
                 $0.isEmpty ? nil : $0

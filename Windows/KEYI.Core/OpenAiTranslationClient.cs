@@ -72,8 +72,15 @@ public sealed class OpenAiTranslationClient
         try
         {
             using var document = JsonDocument.Parse(responseBody);
-            var content = document.RootElement
-                .GetProperty("choices")[0]
+            var choice = document.RootElement.GetProperty("choices")[0];
+            if (choice.TryGetProperty("finish_reason", out var finishReason)
+                && finishReason.GetString() == "length")
+            {
+                throw new TranslationException(
+                    TranslationErrorKind.TruncatedResponse,
+                    "Translation was truncated; the source was not changed");
+            }
+            var content = choice
                 .GetProperty("message")
                 .GetProperty("content")
                 .GetString()
@@ -190,5 +197,6 @@ public enum TranslationErrorKind
     MissingModel,
     RequestFailed,
     EmptyResponse,
-    InvalidResponse
+    InvalidResponse,
+    TruncatedResponse
 }

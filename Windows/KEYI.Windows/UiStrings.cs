@@ -242,6 +242,9 @@ internal sealed class UiStrings
             exception.Detail),
         TranslationErrorKind.EmptyResponse => EmptyApiResponse,
         TranslationErrorKind.InvalidResponse => InvalidApiResponse,
+        TranslationErrorKind.TruncatedResponse => IsEnglish
+            ? "The translation was incomplete; the source was not changed. Translate a shorter selection."
+            : "返回的译文不完整，原文未修改。请缩短选区后重试。",
         _ => exception.Message
     };
 

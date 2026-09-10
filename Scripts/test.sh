@@ -20,3 +20,4 @@ fi
 echo "发布版本一致：$EXPECTED_VERSION"
 swift run KEYICoreChecks
 swift run KEYIAppChecks
+swift run KEYIRegressionChecks

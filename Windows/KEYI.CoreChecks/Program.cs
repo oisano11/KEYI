@@ -17,6 +17,11 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("HTTPS validation", CheckHttpsValidation),
     ("legacy settings file migration", CheckLegacySettingsFileMigration),
     ("focused text fallback policy", CheckFocusedTextFallbackPolicy),
+    ("truncated response rejected", CheckTruncatedResponse),
+    ("nested clipboard restoration", CheckNestedClipboardRestoration),
+    ("clipboard user change preserved", CheckClipboardUserChange),
+    ("untouched clipboard not restored", CheckUntouchedClipboard),
+    ("clipboard restored after verification failure", CheckClipboardVerificationFailure),
 };
 
 foreach (var check in checks)
@@ -347,11 +352,120 @@ static HttpResponseMessage JsonResponse(HttpStatusCode status, string json) => n
     Content = new StringContent(json, Encoding.UTF8, "application/json")
 };
 
+static async Task CheckTruncatedResponse()
+{
+    using var http = new HttpClient(new StubHandler(_ => Task.FromResult(
+        JsonResponse(HttpStatusCode.OK,
+            "{\"choices\":[{\"finish_reason\":\"length\",\"message\":{\"content\":\"An unfinished translation\"}}]}"))));
+    var rejected = false;
+    try
+    {
+        await new OpenAiTranslationClient(http).TranslateAsync(
+            new TextTranslationRequest("Long text", null, TranslationLanguage.English,
+                TranslationScene.Automatic, EnglishStyle.Automatic),
+            new ApiProviderConfiguration(ProviderId.DeepSeek, "test-secret",
+                new Uri("https://example.test/chat/completions"), "test-model"));
+    }
+    catch (TranslationException exception)
+    {
+        rejected = exception.Kind == TranslationErrorKind.TruncatedResponse;
+    }
+    Assert(rejected, "a nonempty truncated translation must not be returned for write-back");
+}
+
+static async Task CheckNestedClipboardRestoration()
+{
+    var clipboard = new ClipboardProbe();
+    var transaction = clipboard.Capture();
+    transaction.RecordChange(clipboard.Write("translation"));
+    transaction.RecordChange(clipboard.Write("verification copy"));
+    var lastOwnedSequence = clipboard.Sequence;
+    await transaction.RestoreAsync();
+    Assert(clipboard.Text == "original", "nested verification must restore the original, not the translation");
+    Assert(clipboard.RestoreCount == 1 && clipboard.RestoredSequence == lastOwnedSequence,
+        "restoration must use the last verification sequence");
+    await transaction.RestoreAsync();
+    Assert(clipboard.RestoreCount == 1, "the original clipboard must only be restored once");
+}
+
+static async Task CheckClipboardUserChange()
+{
+    var clipboard = new ClipboardProbe();
+    var transaction = clipboard.Capture();
+    transaction.RecordChange(clipboard.Write("translation"));
+    transaction.RecordChange(clipboard.Write("verification copy"));
+    clipboard.Write("user copied something else");
+    await transaction.RestoreAsync();
+    Assert(clipboard.Text == "user copied something else" && clipboard.RestoreCount == 0,
+        "a user clipboard change after verification must not be overwritten");
+}
+
+static async Task CheckUntouchedClipboard()
+{
+    var clipboard = new ClipboardProbe();
+    var transaction = clipboard.Capture();
+    await transaction.RestoreAsync();
+    Assert(clipboard.Text == "original" && clipboard.RestoreCount == 0,
+        "an operation that never copied or pasted must not restore the clipboard");
+}
+
+static async Task CheckClipboardVerificationFailure()
+{
+    var clipboard = new ClipboardProbe();
+    var transaction = clipboard.Capture();
+    var failed = false;
+    try
+    {
+        transaction.RecordChange(clipboard.Write("translation"));
+        transaction.RecordChange(clipboard.Write("verification copy"));
+        await Task.FromException(new InvalidOperationException("verification failed"));
+    }
+    catch (InvalidOperationException)
+    {
+        failed = true;
+    }
+    finally
+    {
+        await transaction.RestoreAsync();
+    }
+    Assert(failed && clipboard.Text == "original" && clipboard.RestoreCount == 1,
+        "verification failure must still restore the original clipboard");
+}
+
 static void Assert(bool condition, string message)
 {
     if (!condition)
     {
         throw new Exception($"Assertion failed: {message}");
+    }
+}
+
+sealed class ClipboardProbe
+{
+    public uint Sequence { get; private set; } = 100;
+    public string Text { get; private set; } = "original";
+    public int RestoreCount { get; private set; }
+    public uint? RestoredSequence { get; private set; }
+
+    public uint Write(string text)
+    {
+        Text = text;
+        return ++Sequence;
+    }
+
+    public ClipboardTransaction Capture()
+    {
+        var original = Text;
+        return new ClipboardTransaction(() => Sequence, expectedSequence =>
+        {
+            if (Sequence == expectedSequence)
+            {
+                RestoreCount++;
+                RestoredSequence = expectedSequence;
+                Write(original);
+            }
+            return Task.CompletedTask;
+        });
     }
 }
 

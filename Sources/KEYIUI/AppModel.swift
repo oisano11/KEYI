@@ -53,6 +53,12 @@ final class AppModel: ObservableObject {
         case providers(TranslationProviderID?)
         case hotKey
         case general
+
+        var providerForEditing: TranslationProviderID {
+            guard case let .providers(providerID) = self,
+                  let providerID, providerID != .appleSystem else { return .deepSeek }
+            return providerID
+        }
     }
 
     @Published private(set) var state: State = .ready
@@ -67,7 +73,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var localModelEndpoint: String
     @Published private(set) var localModelName: String
     @Published var settingsSection: SettingsSection = .translation
-    private let accessibility = AccessibilityTextClient()
+    private let accessibility: any FocusedTextAccess
     private let settings: TranslationSettingsStore
     private let hotKeySettings: HotKeySettingsStore
     private let logger = Logger(
@@ -79,9 +85,12 @@ final class AppModel: ObservableObject {
     private var apiTranslationTask: Task<Void, Never>?
     private var hotKeyRegistrationHandler: ((HotKeyConfiguration) throws -> Void)?
 
-    private init() {
-        let settings = TranslationSettingsStore()
-        let hotKeySettings = HotKeySettingsStore()
+    init(
+        settings: TranslationSettingsStore = TranslationSettingsStore(),
+        hotKeySettings: HotKeySettingsStore = HotKeySettingsStore(),
+        accessibility: any FocusedTextAccess = AccessibilityTextClient()
+    ) {
+        self.accessibility = accessibility
         self.settings = settings
         self.hotKeySettings = hotKeySettings
         self.selectedProviderID = settings.preferences.providerID
@@ -318,6 +327,8 @@ final class AppModel: ObservableObject {
             }
         } catch AccessibilityTextClient.Error.permissionRequired {
             logger.error("Translation blocked: accessibility permission required")
+            clearPending()
+            state = .permissionRequired
             requestAccessibilityPermission()
         } catch {
             logger.error("Focused text capture failed: \(error.localizedDescription, privacy: .private)")

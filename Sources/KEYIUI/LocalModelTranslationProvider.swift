@@ -4,9 +4,11 @@ import KEYICore
 struct LocalModelTranslationProvider: TranslationProvider {
     let id: TranslationProviderID = .localModel
     private let configuration: LocalModelConfiguration
+    private let session: URLSession
 
-    init(configuration: LocalModelConfiguration) {
+    init(configuration: LocalModelConfiguration, session: URLSession = .shared) {
         self.configuration = configuration
+        self.session = session
     }
 
     func translate(_ request: TextTranslationRequest) async throws -> String {
@@ -68,7 +70,7 @@ struct LocalModelTranslationProvider: TranslationProvider {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: urlRequest)
+            (data, response) = try await session.data(for: urlRequest)
         } catch let error as URLError where error.code == .timedOut {
             throw LocalModelTranslationError.timeout
         } catch {
@@ -108,13 +110,15 @@ struct LocalModelTranslationProvider: TranslationProvider {
     private static func translation(
         from choice: LocalChatCompletionResponse.Choice
     ) -> String? {
+        guard choice.finishReason != "length" else { return nil }
         let content = cleanTranslation(choice.message.content)
         return content.isEmpty ? nil : content
     }
 
     private static func cleanTranslation(_ value: String) -> String {
         var result = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if result.hasPrefix("<think>"), let end = result.range(of: "</think>") {
+        if result.hasPrefix("<think>") {
+            guard let end = result.range(of: "</think>") else { return "" }
             result.removeSubrange(result.startIndex..<end.upperBound)
             result = result.trimmingCharacters(in: .whitespacesAndNewlines)
         }

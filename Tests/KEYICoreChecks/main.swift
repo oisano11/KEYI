@@ -504,4 +504,15 @@ do {
 }
 expect(invalidResponseCaptured, "非法 JSON 应报无效响应")
 
+StubURLProtocol.respond = { _ in
+    (200, "{\"choices\":[{\"finish_reason\":\"length\",\"message\":{\"role\":\"assistant\",\"content\":\"An unfinished translation\"}}]}")
+}
+var truncatedResponseRejected = false
+do {
+    _ = try await stubChatProvider.translate(TextTranslationRequest(sourceText: "长文本"))
+} catch APITranslationError.truncatedResponse {
+    truncatedResponseRejected = true
+}
+expect(truncatedResponseRejected, "截断且非空的译文不得作为成功结果返回")
+
 print("KEYICore checks passed: \(checkCount)")

@@ -229,7 +229,9 @@ struct TranslationPreferencesTab: View {
 
 struct ProvidersTab: View {
     @ObservedObject var model: AppModel
-    @State private var selectedProvider: TranslationProviderID = .deepSeek
+    private var selectedProvider: TranslationProviderID {
+        model.settingsSection.providerForEditing
+    }
     @State private var apiKey = ""
     @State private var endpointText = ""
     @State private var modelText = ""
@@ -285,7 +287,7 @@ struct ProvidersTab: View {
         Binding(
             get: { selectedProvider },
             set: { newValue in
-                selectedProvider = newValue == .appleSystem ? .deepSeek : newValue
+                model.settingsSection = .providers(newValue == .appleSystem ? .deepSeek : newValue)
             }
         )
     }
