@@ -32,7 +32,7 @@ enum LocalModelRuntime {
     static func ensureReady(
         configuration: LocalModelConfiguration
     ) async throws {
-        if await modelIsAvailable(configuration: configuration) {
+        if try await modelIsAvailable(configuration: configuration) {
             return
         }
 
@@ -79,7 +79,7 @@ enum LocalModelRuntime {
         )
 
         for _ in 0..<90 {
-            if await modelIsAvailable(configuration: configuration) {
+            if try await modelIsAvailable(configuration: configuration) {
                 return
             }
             try await Task.sleep(for: .seconds(1))
@@ -89,15 +89,21 @@ enum LocalModelRuntime {
 
     private static func modelIsAvailable(
         configuration: LocalModelConfiguration
-    ) async -> Bool {
-        guard let modelsURL = modelsURL(for: configuration.endpoint) else {
+    ) async throws -> Bool {
+        let endpoint = LocalModelTrust.directEndpoint(configuration.endpoint)
+        do {
+            try LocalModelTrust.validate(endpoint)
+        } catch LocalModelTranslationError.serviceUnavailable {
+            return false
+        }
+        guard let modelsURL = modelsURL(for: endpoint) else {
             return false
         }
         var request = URLRequest(url: modelsURL)
         request.httpMethod = "GET"
         request.timeoutInterval = 2
         request.setValue("Bearer lm-studio", forHTTPHeaderField: "Authorization")
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await LocalModelTrust.session.data(for: request, delegate: LocalModelNoRedirectDelegate.shared),
               let httpResponse = response as? HTTPURLResponse,
               (200..<300).contains(httpResponse.statusCode),
               let decoded = try? JSONDecoder().decode(

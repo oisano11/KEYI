@@ -73,7 +73,7 @@ internal sealed class FocusedTextClient
         }
     }
 
-    public async Task ReplaceAsync(TextSnapshot snapshot, string translatedText)
+    public async Task<bool> ReplaceAsync(TextSnapshot snapshot, string translatedText)
     {
         if (string.IsNullOrWhiteSpace(translatedText))
         {
@@ -82,6 +82,7 @@ internal sealed class FocusedTextClient
         await ValidateAsync(snapshot);
 
         var transaction = CaptureClipboardTransaction();
+        var clipboardRestored = true;
         try
         {
             ClipboardAccess.SetText(translatedText);
@@ -89,15 +90,18 @@ internal sealed class FocusedTextClient
 
             if (snapshot.Scope == ReplacementScope.Full)
             {
+                EnsureFocusedTarget(snapshot.ForegroundWindow, snapshot.RuntimeId);
                 NativeMethods.SendControlChord(VirtualKeyA);
             }
+            EnsureFocusedTarget(snapshot.ForegroundWindow, snapshot.RuntimeId);
             NativeMethods.SendControlChord(VirtualKeyV);
             await VerifyCommittedAsync(snapshot, translatedText, transaction);
         }
         finally
         {
-            await transaction.RestoreAsync();
+            clipboardRestored = await transaction.TryRestoreAsync();
         }
+        return clipboardRestored;
     }
 
     private static TextSnapshot CaptureTextPattern(
@@ -149,15 +153,19 @@ internal sealed class FocusedTextClient
         uint copiedSequence = 0;
         try
         {
+            EnsureFocusedTarget(foregroundWindow, runtimeId);
             NativeMethods.SendControlChord(VirtualKeyC);
             copiedSequence = await WaitForClipboardChangeAsync(originalSequence);
             if (copiedSequence == 0)
             {
                 throw new FocusedTextException(UiStrings.Current.ClipboardSelectionRequired);
             }
-            transaction.RecordChange(copiedSequence);
-
+            EnsureFocusedTarget(foregroundWindow, runtimeId);
+            EnsureClipboardSource(foregroundWindow, copiedSequence);
             var selectedText = ClipboardAccess.GetUnicodeText();
+            EnsureFocusedTarget(foregroundWindow, runtimeId);
+            EnsureClipboardSource(foregroundWindow, copiedSequence);
+            transaction.RecordChange(copiedSequence);
             EnsureSource(selectedText);
             return new TextSnapshot(
                 foregroundWindow,
@@ -174,6 +182,28 @@ internal sealed class FocusedTextClient
             {
                 await transaction.RestoreAsync();
             }
+        }
+    }
+
+    private static void EnsureFocusedTarget(nint window, int[] runtimeId)
+    {
+        var element = AutomationElement.FocusedElement;
+        if (NativeMethods.GetForegroundWindow() != window || element is null
+            || !runtimeId.SequenceEqual(element.GetRuntimeId()))
+        {
+            throw new FocusedTextException(UiStrings.Current.FocusChanged);
+        }
+    }
+
+    private static void EnsureClipboardSource(nint window, uint sequence)
+    {
+        NativeMethods.GetWindowThreadProcessId(window, out var expectedProcess);
+        var owner = NativeMethods.GetClipboardOwner();
+        NativeMethods.GetWindowThreadProcessId(owner, out var ownerProcess);
+        if (owner == nint.Zero || !ClipboardCopyAttribution.IsExpectedCopy(
+            expectedProcess, ownerProcess, sequence, NativeMethods.GetClipboardSequenceNumber()))
+        {
+            throw new FocusedTextException(UiStrings.Current.ClipboardSourceUnconfirmed);
         }
     }
 
@@ -267,6 +297,7 @@ internal sealed class FocusedTextClient
         }
 
         await Task.Delay(CommitVerificationInterval);
+        EnsureFocusedTarget(snapshot.ForegroundWindow, snapshot.RuntimeId);
         NativeMethods.SendShiftLeft(StringInfo.ParseCombiningCharacters(translatedText).Length);
         var current = await CaptureAsync(transaction);
         if (current.ReadMode != FocusedTextReadMode.ClipboardSelection

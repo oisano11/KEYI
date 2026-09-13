@@ -404,4 +404,6 @@ private func renderedAPIMessage(
     return error.localizedMessage
 }
 
+checkCount += try await runAppFlowChecks()
+try await runLocalModelTrustChecks()
 print("KEYI App checks passed: \(checkCount)")

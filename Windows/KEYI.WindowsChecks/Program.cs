@@ -19,7 +19,11 @@ internal static class Program
             var model = Field<TextBox>(form, "_model");
             foreach (var provider in ProviderCatalog.All)
             {
-                list.SelectedItem = provider.Id;
+                Field<TabControl>(form, "_tabs").SelectedIndex = 0;
+                form.NavigateToProvider(provider.Id);
+                Assert(Field<TabControl>(form, "_tabs").SelectedIndex == 1
+                    && list.SelectedItem is ProviderId destination && destination == provider.Id,
+                    "an existing form must navigate to the requested service without activating it");
                 for (var refresh = 0; refresh < 2; refresh++)
                 {
                     typeof(SettingsForm).GetMethod("RefreshProviderList",

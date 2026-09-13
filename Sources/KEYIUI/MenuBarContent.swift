@@ -16,6 +16,16 @@ struct MenuBarContent: View {
     var body: some View {
         let strings = model.strings
 
+        if !model.terminalRecoveryCommands.isEmpty {
+            Button(strings.copyOriginalTerminalCommand) {
+                model.copyOriginalTerminalCommand()
+            }
+            Button(strings.discardOriginalTerminalCommand) {
+                model.discardOriginalTerminalCommand()
+            }
+            Divider()
+        }
+
         Button(strings.settings) {
             model.openSettings(.translation)
         }

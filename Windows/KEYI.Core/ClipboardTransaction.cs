@@ -14,4 +14,18 @@ public sealed class ClipboardTransaction(
         _ownedSequence is uint sequence && currentSequence() == sequence
             ? restoreSnapshot(sequence)
             : Task.CompletedTask;
+
+    // Cleanup must not mask a write failure or turn a committed edit into failure.
+    public async Task<bool> TryRestoreAsync()
+    {
+        try
+        {
+            await RestoreAsync();
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
 }

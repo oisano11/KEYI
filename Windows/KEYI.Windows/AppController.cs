@@ -230,8 +230,12 @@ internal sealed class AppController : IDisposable, ISettingsDialogHost
                     providerSettings.Model));
 
             SetStatus(_strings.WritingInput);
-            await _focusedText.ReplaceAsync(snapshot, translated);
-            SetStatus(_strings.TranslationComplete);
+            var clipboardRestored = await _focusedText.ReplaceAsync(snapshot, translated);
+            SetStatus(clipboardRestored ? _strings.TranslationComplete : _strings.ClipboardRestoreFailed);
+            if (!clipboardRestored)
+            {
+                ShowBalloon(_strings.AppName, _strings.ClipboardRestoreFailed, ToolTipIcon.Warning);
+            }
         }
         catch (Exception exception)
         {
@@ -275,6 +279,10 @@ internal sealed class AppController : IDisposable, ISettingsDialogHost
     {
         if (_settingsForm is { IsDisposed: false } existing)
         {
+            if (preselectProvider is ProviderId provider)
+            {
+                existing.NavigateToProvider(provider);
+            }
             existing.Activate();
             return;
         }

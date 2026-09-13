@@ -3,6 +3,7 @@ import ApplicationServices
 import Carbon
 import Foundation
 import KEYICore
+import OSLog
 
 @MainActor
 protocol FocusedTextAccess {
@@ -94,9 +95,30 @@ final class AccessibilityTextClient: FocusedTextAccess {
         case terminalSelectionRequired
         case unsafeTerminalTranslation
         case terminalWriteFailed
+        case terminalRecoveryRequired(originalText: String)
         case contentChanged
         case browserInputFailed
+        case selectionUpdateTimedOut
         case writeFailed(AXError)
+
+        /// Stable diagnostic categories; never include captured or translated text.
+        var diagnosticCode: String {
+            switch self {
+            case .permissionRequired: "permission_required"
+            case .noFocusedText: "no_focused_text"
+            case .unreadableText: "unreadable_text"
+            case .invalidSelection: "invalid_selection"
+            case .readOnlyText: "read_only_text"
+            case .terminalSelectionRequired: "terminal_selection_required"
+            case .unsafeTerminalTranslation: "unsafe_terminal_translation"
+            case .terminalWriteFailed: "terminal_write_failed"
+            case .terminalRecoveryRequired: "terminal_recovery_required"
+            case .contentChanged: "content_changed"
+            case .browserInputFailed: "browser_input_failed"
+            case .selectionUpdateTimedOut: "selection_update_timed_out"
+            case .writeFailed: "ax_write_failed"
+            }
+        }
 
         var errorDescription: String? {
             let strings = InterfaceStrings.current
@@ -109,8 +131,10 @@ final class AccessibilityTextClient: FocusedTextAccess {
             case .terminalSelectionRequired: strings.terminalSelectionRequired
             case .unsafeTerminalTranslation: strings.unsafeTerminalTranslation
             case .terminalWriteFailed: strings.terminalWriteFailed
+            case .terminalRecoveryRequired: strings.terminalRecoveryRequired
             case .contentChanged: strings.contentChanged
             case .browserInputFailed: strings.browserInputFailed
+            case .selectionUpdateTimedOut: strings.browserInputFailed
             case let .writeFailed(error): strings.accessibilityWriteFailed(Int(error.rawValue))
             }
         }
@@ -181,8 +205,16 @@ final class AccessibilityTextClient: FocusedTextAccess {
         }
 
         let mode: WriteMode
-        if requiresPasteWriteBack(element),
-           try isSettable(kAXSelectedTextRangeAttribute, on: element) {
+        let browserStrategy = Self.browserWriteStrategy(
+            isWebInput: requiresPasteWriteBack(element),
+            selectionRangeIsSettable: try isSettable(kAXSelectedTextRangeAttribute, on: element)
+        )
+        if browserStrategy != .notWeb {
+            // An unavailable AX selection setter must use the keyboard fallback,
+            // never direct AXValue writes that bypass a controlled editor's input.
+            guard browserStrategy == .paste else {
+                throw Error.readOnlyText
+            }
             mode = .browserPaste
         } else if try isSettable(kAXValueAttribute, on: element) {
             mode = .value
@@ -218,12 +250,7 @@ final class AccessibilityTextClient: FocusedTextAccess {
             valueIsSettable: (try? isSettable(kAXValueAttribute, on: element)) == true
         )
 
-        let pasteboard = NSPasteboard.general
-        let pasteboardScope = ScopedPasteboard(pasteboard: pasteboard)
-        defer { pasteboardScope.restoreIfUnchanged() }
-
-        let selectedText = await copyFocusedText(using: pasteboard)
-        pasteboardScope.trackLatestChange()
+        let selectedText = await readFocusedSelection()
         let text: String
         if let selectedText {
             text = selectedText
@@ -236,10 +263,9 @@ final class AccessibilityTextClient: FocusedTextAccess {
                 throw Error.noFocusedText
             }
             await pause(80)
-            guard let wholeText = await copyFocusedText(using: pasteboard) else {
+            guard let wholeText = await readFocusedSelection() else {
                 throw Error.noFocusedText
             }
-            pasteboardScope.trackLatestChange()
             text = wholeText
         }
 
@@ -351,6 +377,17 @@ final class AccessibilityTextClient: FocusedTextAccess {
         }
     }
 
+    enum BrowserWriteStrategy {
+        case notWeb, paste, keyboardFallback
+    }
+
+    static func browserWriteStrategy(
+        isWebInput: Bool, selectionRangeIsSettable: Bool
+    ) -> BrowserWriteStrategy {
+        guard isWebInput else { return .notWeb }
+        return selectionRangeIsSettable ? .paste : .keyboardFallback
+    }
+
     private func targetIdentity(for element: AXUIElement) -> TargetIdentity {
         TargetIdentity(
             element: element,
@@ -433,25 +470,31 @@ final class AccessibilityTextClient: FocusedTextAccess {
         return Self.isWebTextInput(bundleIdentifier)
     }
 
-    private func copyFocusedText(using pasteboard: NSPasteboard) async -> String? {
-        let previousChangeCount = pasteboard.changeCount
-        guard postKeyCombo(virtualKey: CGKeyCode(kVK_ANSI_C)) else {
-            return nil
-        }
-        await pause(80)
-        guard pasteboard.changeCount != previousChangeCount else {
-            return nil
-        }
-        let value = pasteboard.string(forType: .string)
-        return value?.isEmpty == false ? value : nil
+    private func readFocusedSelection() async -> String? {
+        // NSPasteboard has no public writer-identity API. Read the selection
+        // from its AX owner instead of treating an unrelated clipboard update
+        // as the result of Cmd-C. Unsupported controls fail closed.
+        guard let element = try? await focusedElement() else { return nil }
+        return Self.verifiedSelectionText(
+            selectedText: stringAttribute(kAXSelectedTextAttribute, from: element),
+            value: stringAttribute(kAXValueAttribute, from: element),
+            range: try? selectionRange(from: element)
+        )
     }
 
-    private func copyFocusedText(
-        using pasteboard: NSPasteboard,
+    static func verifiedSelectionText(selectedText: String?, value: String?, range: NSRange?) -> String? {
+        if let selectedText, !selectedText.isEmpty { return selectedText }
+        guard let value, let range, range.length > 0, range.location >= 0,
+              range.location <= (value as NSString).length,
+              range.length <= (value as NSString).length - range.location else { return nil }
+        return (value as NSString).substring(with: range)
+    }
+
+    private func readFocusedSelection(
         isCurrent: @escaping @MainActor () -> Bool
     ) async throws -> String? {
         try TranslationWriteBackGate.requireActive(isCurrent)
-        return await copyFocusedText(using: pasteboard)
+        return await readFocusedSelection()
     }
 
     private func replaceUsingKeyboardPaste(
@@ -465,22 +508,24 @@ final class AccessibilityTextClient: FocusedTextAccess {
         let pasteboardScope = ScopedPasteboard(pasteboard: pasteboard)
         defer { pasteboardScope.restoreIfUnchanged() }
 
-        let selectedText = try await copyFocusedText(
-            using: pasteboard,
+        let selectedText = try await readFocusedSelection(
             isCurrent: isCurrent
         )
-        pasteboardScope.trackLatestChange()
         guard selectedText == snapshot.selection.text else {
             throw Error.contentChanged
         }
 
+        guard pasteboardScope.isUnchanged else { throw Error.contentChanged }
         pasteboard.clearContents()
-        guard pasteboard.setString(translatedText, forType: .string) else {
+        pasteboardScope.trackLatestChange()
+        let didWrite = pasteboard.setString(translatedText, forType: .string)
+        pasteboardScope.trackLatestChange()
+        guard didWrite else {
             throw Error.browserInputFailed
         }
-        pasteboardScope.trackLatestChange()
         _ = try await requireTarget(snapshot.target, processIdentifier: snapshot.applicationProcessIdentifier)
         try TranslationWriteBackGate.requireActive(isCurrent)
+        guard pasteboardScope.isUnchanged else { throw Error.contentChanged }
         guard postPasteShortcut() else {
             throw Error.browserInputFailed
         }
@@ -530,60 +575,77 @@ final class AccessibilityTextClient: FocusedTextAccess {
             length: currentRange.location - snapshot.selection.range.location
         )
         let deletedText = originalText.substring(with: deletedRange)
-        try TranslationWriteBackGate.requireActive(isCurrent)
-        guard postBackspaces(count: deletedText.count) else {
-            throw Error.terminalWriteFailed
-        }
-
-        let clearedRange = NSRange(
-            location: snapshot.selection.range.location,
-            length: 0
-        )
-        guard await waitForTerminalState(
-            snapshotElement: snapshotElement,
-            expectedProcessIdentifier: expectedProcessIdentifier,
-            expectedRange: clearedRange,
-            expectedText: nil,
-            expectedTextLocation: nil
-        ) else {
-            throw Error.terminalWriteFailed
-        }
-
         let pasteboard = NSPasteboard.general
         let pasteboardScope = ScopedPasteboard(pasteboard: pasteboard)
         defer { pasteboardScope.restoreIfUnchanged() }
-
         let replacementText = translatedText + trailingText
         pasteboard.clearContents()
-        guard pasteboard.setString(replacementText, forType: .string) else {
+        pasteboardScope.trackLatestChange()
+        let didWrite = pasteboard.setString(replacementText, forType: .string)
+        pasteboardScope.trackLatestChange()
+        guard didWrite else {
             throw Error.terminalWriteFailed
         }
-        pasteboardScope.trackLatestChange()
-
-        guard frontmostTargetApplication()?.processIdentifier == expectedProcessIdentifier,
-              let focusedBeforePaste = try? await focusedElement(),
-              CFEqual(focusedBeforePaste, snapshotElement),
-              let rangeBeforePaste = try? selectionRange(from: focusedBeforePaste),
-              rangeBeforePaste == clearedRange else {
+        _ = try await requireTarget(snapshot.target, processIdentifier: expectedProcessIdentifier)
+        guard (try? selectionRange(from: snapshotElement)) == currentRange,
+              stringAttribute(kAXValueAttribute, from: snapshotElement) == snapshot.originalValue else {
             throw Error.contentChanged
         }
         try TranslationWriteBackGate.requireActive(isCurrent)
-        guard postPasteShortcut() else {
-            throw Error.terminalWriteFailed
-        }
+        do {
+            guard postBackspaces(count: deletedText.count, isSafe: {
+                isCurrent() && pasteboardScope.isUnchanged
+                    && self.frontmostTargetApplication()?.processIdentifier == expectedProcessIdentifier
+                    && self.focusedElement(from: AXUIElementCreateApplication(expectedProcessIdentifier))
+                        .map { CFEqual($0, snapshotElement) } == true
+            }) else {
+                throw Error.terminalWriteFailed
+            }
 
-        let finalRange = NSRange(
-            location: clearedRange.location + (replacementText as NSString).length,
-            length: 0
-        )
-        guard await waitForTerminalState(
-            snapshotElement: snapshotElement,
-            expectedProcessIdentifier: expectedProcessIdentifier,
-            expectedRange: finalRange,
-            expectedText: translatedText,
-            expectedTextLocation: snapshot.selection.range.location
-        ) else {
-            throw Error.terminalWriteFailed
+            let clearedRange = NSRange(
+                location: snapshot.selection.range.location,
+                length: 0
+            )
+            guard await waitForTerminalState(
+                snapshotElement: snapshotElement,
+                expectedProcessIdentifier: expectedProcessIdentifier,
+                expectedRange: clearedRange,
+                expectedText: nil,
+                expectedTextLocation: nil
+            ) else {
+                throw Error.terminalWriteFailed
+            }
+
+            guard frontmostTargetApplication()?.processIdentifier == expectedProcessIdentifier,
+                  let focusedBeforePaste = try? await focusedElement(),
+                  CFEqual(focusedBeforePaste, snapshotElement),
+                  let rangeBeforePaste = try? selectionRange(from: focusedBeforePaste),
+                  rangeBeforePaste == clearedRange else {
+                throw Error.contentChanged
+            }
+            try TranslationWriteBackGate.requireActive(isCurrent)
+            guard pasteboardScope.isUnchanged else { throw Error.contentChanged }
+            guard postPasteShortcut() else {
+                throw Error.terminalWriteFailed
+            }
+
+            let finalRange = NSRange(
+                location: clearedRange.location + (replacementText as NSString).length,
+                length: 0
+            )
+            guard await waitForTerminalState(
+                snapshotElement: snapshotElement,
+                expectedProcessIdentifier: expectedProcessIdentifier,
+                expectedRange: finalRange,
+                expectedText: translatedText,
+                expectedTextLocation: snapshot.selection.range.location
+            ) else {
+                throw Error.terminalWriteFailed
+            }
+        } catch {
+            // Deletion may be partial; never replay keys into a changed target.
+            // The caller retains this original for an explicit recovery action.
+            throw Error.terminalRecoveryRequired(originalText: deletedText)
         }
     }
 
@@ -826,19 +888,40 @@ final class AccessibilityTextClient: FocusedTextAccess {
         isCurrent: @escaping @MainActor () -> Bool
     ) async throws {
         try TranslationWriteBackGate.requireActive(isCurrent)
-        let selectionResult = setSelectionRange(range, on: element)
-        guard selectionResult == .success else {
-            throw Error.writeFailed(selectionResult)
-        }
+        let previousRange = try selectionRange(from: element)
+        // AX success acknowledges the request; Chromium/Electron can publish
+        // the new selection on a later event-loop turn. Wait for that one
+        // request, preserving target/content checks on every observation.
+        try await Self.waitForSelectionUpdate(requestSelection: {
+            let result = self.setSelectionRange(range, on: element)
+            guard result == .success else { throw Error.writeFailed(result) }
+        }, isReady: {
+            try TranslationWriteBackGate.requireActive(isCurrent)
+            let current = try await self.requireTarget(
+                target, processIdentifier: processIdentifier, allowsRecreatedElement: true
+            )
+            guard (try self.copyAttribute(kAXValueAttribute, from: current) as? String) == originalValue else {
+                throw Error.contentChanged
+            }
+            let currentRange = try self.selectionRange(from: current)
+            guard currentRange == range || currentRange == previousRange else {
+                throw Error.contentChanged
+            }
+            return currentRange == range
+        }, pause: {
+            try await Task.sleep(for: .milliseconds(10))
+        })
 
         let pasteboard = NSPasteboard.general
         let pasteboardScope = ScopedPasteboard(pasteboard: pasteboard)
+        defer { pasteboardScope.restoreIfUnchanged() }
         pasteboard.clearContents()
-        guard pasteboard.setString(translatedText, forType: .string) else {
+        pasteboardScope.trackLatestChange()
+        let didWrite = pasteboard.setString(translatedText, forType: .string)
+        pasteboardScope.trackLatestChange()
+        guard didWrite else {
             throw Error.browserInputFailed
         }
-        pasteboardScope.trackLatestChange()
-        defer { pasteboardScope.restoreIfUnchanged() }
 
         let focusedBeforePaste = try await requireTarget(
             target, processIdentifier: processIdentifier, allowsRecreatedElement: true
@@ -848,6 +931,7 @@ final class AccessibilityTextClient: FocusedTextAccess {
             throw Error.contentChanged
         }
         try TranslationWriteBackGate.requireActive(isCurrent)
+        guard pasteboardScope.isUnchanged else { throw Error.contentChanged }
         guard postPasteShortcut() else {
             throw Error.browserInputFailed
         }
@@ -862,13 +946,37 @@ final class AccessibilityTextClient: FocusedTextAccess {
                 kAXValueAttribute,
                 from: verificationElement
             ) as? String,
-               value == expectedValue
-                || (value != originalValue && value.contains(translatedText)) {
+               Self.pasteMatchesExpected(value, expected: expectedValue) {
                 return
             }
         } while Date() < deadline
 
         throw Error.browserInputFailed
+    }
+
+    static func pasteMatchesExpected(_ actual: String, expected: String) -> Bool {
+        actual == expected
+    }
+
+    static func waitForSelectionUpdate(
+        requestSelection: () throws -> Void,
+        isReady: () async throws -> Bool,
+        pause: () async throws -> Void
+    ) async throws {
+        try Task.checkCancellation()
+        try requestSelection()
+        for attempt in 0..<21 {
+            try Task.checkCancellation()
+            if try await isReady() {
+                if attempt > 0 {
+                    Logger(subsystem: "com.keyi.input-translator", category: "WriteBack")
+                        .info("Selection update acknowledged after polling; polls=\(attempt)")
+                }
+                return
+            }
+            if attempt < 20 { try await pause() }
+        }
+        throw Error.selectionUpdateTimedOut
     }
 
     private func setSelectionRange(
@@ -896,12 +1004,13 @@ final class AccessibilityTextClient: FocusedTextAccess {
         try? await Task.sleep(for: .milliseconds(milliseconds))
     }
 
-    private func postBackspaces(count: Int) -> Bool {
+    private func postBackspaces(count: Int, isSafe: () -> Bool) -> Bool {
         guard count > 0,
               let source = CGEventSource(stateID: .combinedSessionState) else {
             return false
         }
         for _ in 0..<count {
+            guard isSafe() else { return false }
             guard let keyDown = CGEvent(
                 keyboardEventSource: source,
                 virtualKey: CGKeyCode(kVK_Delete),
@@ -1016,7 +1125,7 @@ private struct PasteboardSnapshot {
 
 /// 借用系统剪贴板的统一出口：进入作用域时快照原内容，退出时若期间
 /// 剪贴板没有出现我们之外的新变化就恢复快照，尽量不污染用户剪贴板。
-private final class ScopedPasteboard {
+final class ScopedPasteboard {
     private let pasteboard: NSPasteboard
     private let snapshot: PasteboardSnapshot
     private var trackedChangeCount: Int
@@ -1031,6 +1140,8 @@ private final class ScopedPasteboard {
     func trackLatestChange() {
         trackedChangeCount = pasteboard.changeCount
     }
+
+    var isUnchanged: Bool { pasteboard.changeCount == trackedChangeCount }
 
     /// 在 defer 中调用：没有新变化才恢复，避免覆盖目标应用已读取的新内容。
     func restoreIfUnchanged() {

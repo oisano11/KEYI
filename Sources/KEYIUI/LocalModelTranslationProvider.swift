@@ -5,10 +5,17 @@ struct LocalModelTranslationProvider: TranslationProvider {
     let id: TranslationProviderID = .localModel
     private let configuration: LocalModelConfiguration
     private let session: URLSession
+    private let validateEndpoint: @Sendable (URL) throws -> Void
 
-    init(configuration: LocalModelConfiguration, session: URLSession = .shared) {
-        self.configuration = configuration
+    init(configuration: LocalModelConfiguration, session: URLSession = LocalModelTrust.session,
+         validateEndpoint: @escaping @Sendable (URL) throws -> Void = LocalModelTrust.validate) {
+        self.configuration = LocalModelConfiguration(
+            endpoint: LocalModelTrust.directEndpoint(configuration.endpoint),
+            model: configuration.model,
+            loadKey: configuration.loadKey
+        )
         self.session = session
+        self.validateEndpoint = validateEndpoint
     }
 
     func translate(_ request: TextTranslationRequest) async throws -> String {
@@ -45,6 +52,7 @@ struct LocalModelTranslationProvider: TranslationProvider {
         for request: TextTranslationRequest,
         maxTokens: Int
     ) async throws -> LocalChatCompletionResponse.Choice {
+        try validateEndpoint(configuration.endpoint)
         var urlRequest = URLRequest(url: configuration.endpoint)
         urlRequest.httpMethod = "POST"
         urlRequest.timeoutInterval = 120
@@ -70,7 +78,7 @@ struct LocalModelTranslationProvider: TranslationProvider {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: urlRequest)
+            (data, response) = try await session.data(for: urlRequest, delegate: LocalModelNoRedirectDelegate.shared)
         } catch let error as URLError where error.code == .timedOut {
             throw LocalModelTranslationError.timeout
         } catch {
@@ -174,6 +182,7 @@ private struct LocalModelErrorResponse: Decodable, Sendable {
 enum LocalModelTranslationError: LocalizedError {
     case emptySource
     case serviceUnavailable
+    case untrustedService
     case timeout
     case invalidResponse
     case emptyResponse
@@ -187,6 +196,8 @@ enum LocalModelTranslationError: LocalizedError {
             strings.emptySource
         case .serviceUnavailable:
             strings.localModelServiceUnavailable
+        case .untrustedService:
+            strings.localModelServiceUntrusted
         case .timeout:
             strings.localModelTimeout
         case .invalidResponse:

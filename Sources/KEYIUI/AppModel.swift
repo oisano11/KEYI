@@ -73,7 +73,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var localModelEndpoint: String
     @Published private(set) var localModelName: String
     @Published var settingsSection: SettingsSection = .translation
+    @Published private(set) var terminalRecoveryCommands: [String] = []
     private let accessibility: any FocusedTextAccess
+    private let presentSettings: @MainActor () -> Void
     private let settings: TranslationSettingsStore
     private let hotKeySettings: HotKeySettingsStore
     private let logger = Logger(
@@ -88,9 +90,11 @@ final class AppModel: ObservableObject {
     init(
         settings: TranslationSettingsStore = TranslationSettingsStore(),
         hotKeySettings: HotKeySettingsStore = HotKeySettingsStore(),
-        accessibility: any FocusedTextAccess = AccessibilityTextClient()
+        accessibility: any FocusedTextAccess = AccessibilityTextClient(),
+        presentSettings: @escaping @MainActor () -> Void = { SettingsWindowController.shared.show() }
     ) {
         self.accessibility = accessibility
+        self.presentSettings = presentSettings
         self.settings = settings
         self.hotKeySettings = hotKeySettings
         self.selectedProviderID = settings.preferences.providerID
@@ -109,6 +113,7 @@ final class AppModel: ObservableObject {
                     : nil
             }
         )
+        logger.info("Translation provider loaded: \(self.selectedProviderID.rawValue, privacy: .public)")
     }
 
     var providerDescriptors: [TranslationProviderDescriptor] {
@@ -227,7 +232,25 @@ final class AppModel: ObservableObject {
 
     func openSettings(_ section: SettingsSection = .translation) {
         settingsSection = section
-        SettingsWindowController.shared.show()
+        presentSettings()
+    }
+
+    func copyOriginalTerminalCommand(to pasteboard: NSPasteboard = .general) {
+        guard let original = terminalRecoveryCommands.first else { return }
+        pasteboard.clearContents()
+        guard pasteboard.setString(original, forType: .string) else {
+            showError(strings.terminalRecoveryRequired)
+            return
+        }
+        discardOriginalTerminalCommand()
+    }
+
+    func discardOriginalTerminalCommand() {
+        guard !terminalRecoveryCommands.isEmpty else { return }
+        terminalRecoveryCommands.removeFirst()
+        if !isBusy {
+            state = terminalRecoveryCommands.isEmpty ? .ready : .failure(strings.terminalRecoveryRequired)
+        }
     }
 
     /// 保存云端提供方配置；校验失败抛出已本地化的错误。
@@ -291,19 +314,24 @@ final class AppModel: ObservableObject {
             logger.info("Duplicate translation trigger ignored while request is active")
             return
         }
+        guard terminalRecoveryCommands.isEmpty else {
+            showError(strings.terminalRecoveryRequired)
+            return
+        }
         if selectedProviderID.requiresAPIConfiguration,
            !isAPIConfigured(selectedProviderID) {
             showError(strings.configureProviderFirst(selectedProviderName))
+            openSettings(.providers(selectedProviderID))
             return
         }
-        logger.info("Translation requested; trusted=\(self.accessibility.isTrusted)")
+        logger.info("Translation requested; provider=\(self.selectedProviderID.rawValue, privacy: .public); trusted=\(self.accessibility.isTrusted)")
 
         // 捕获是异步等待目标应用响应的；置为 preparing 让 isBusy 在
         // 等待期间挡住重复触发的快捷键，避免两次捕获交错操作剪贴板。
         state = .preparing
         do {
             let snapshot = try await accessibility.capture()
-            logger.info("Focused text captured; utf16Length=\((snapshot.selection.text as NSString).length)")
+            logger.info("Focused text captured; mode=\(String(describing: snapshot.writeMode), privacy: .public); utf16Length=\((snapshot.selection.text as NSString).length)")
             let id = UUID()
             pendingID = id
             pendingSnapshot = snapshot
@@ -454,6 +482,17 @@ final class AppModel: ObservableObject {
             apiTranslationTask = nil
             clearPending()
             state = .success
+        } catch AccessibilityTextClient.Error.terminalRecoveryRequired(let originalText) {
+            // Retain the command even if cancellation already cleared this request.
+            // Never paste automatically after losing the terminal's focus.
+            terminalRecoveryCommands.append(originalText)
+            if pendingID == id {
+                apiTranslationTask = nil
+                clearPending()
+                showError(strings.terminalRecoveryRequired)
+            } else if !isBusy {
+                showError(strings.terminalRecoveryRequired)
+            }
         } catch is CancellationError {
             guard pendingID == id else { return }
             apiTranslationTask = nil
@@ -461,7 +500,8 @@ final class AppModel: ObservableObject {
             state = .ready
         } catch {
             guard pendingID == id else { return }
-            logger.error("Translated text commit failed: \(error.localizedDescription, privacy: .private)")
+            let failureCode = (error as? AccessibilityTextClient.Error)?.diagnosticCode ?? "other"
+            logger.error("Translated text commit failed; code=\(failureCode, privacy: .public): \(error.localizedDescription, privacy: .private)")
             apiTranslationTask = nil
             clearPending()
             showError(error.localizedDescription)
