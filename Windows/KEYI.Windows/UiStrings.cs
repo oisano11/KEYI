@@ -299,6 +299,9 @@ internal sealed class UiStrings
     public string ClipboardBusy => IsEnglish
         ? "The clipboard is being used by another app"
         : "剪贴板正被其他应用占用";
+    public string ClipboardSourceUnconfirmed => IsEnglish
+        ? "Could not confirm that the selected app copied this text; translation cancelled"
+        : "无法确认剪贴板文本来自当前应用，已取消翻译";
     public string ClipboardSaveFailed => IsEnglish
         ? "Could not fully save the current clipboard; translation cancelled"
         : "无法完整保存当前剪贴板，未执行翻译";

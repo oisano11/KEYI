@@ -22,6 +22,8 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("clipboard user change preserved", CheckClipboardUserChange),
     ("untouched clipboard not restored", CheckUntouchedClipboard),
     ("clipboard restored after verification failure", CheckClipboardVerificationFailure),
+    ("clipboard cleanup failure is separate", CheckClipboardCleanupFailure),
+    ("clipboard attribution rejects unrelated writers", CheckClipboardAttribution),
 };
 
 foreach (var check in checks)
@@ -430,6 +432,42 @@ static async Task CheckClipboardVerificationFailure()
     }
     Assert(failed && clipboard.Text == "original" && clipboard.RestoreCount == 1,
         "verification failure must still restore the original clipboard");
+}
+
+static async Task CheckClipboardAttribution()
+{
+    Assert(ClipboardCopyAttribution.IsExpectedCopy(42, 42, 101, 101), "target-owned stable copy accepted");
+    Assert(!ClipboardCopyAttribution.IsExpectedCopy(42, 99, 101, 101), "unrelated writer rejected despite changed sequence");
+    Assert(!ClipboardCopyAttribution.IsExpectedCopy(0, 0, 101, 101), "unknown owner rejected");
+    Assert(!ClipboardCopyAttribution.IsExpectedCopy(42, 42, 101, 102), "text changed during read rejected");
+    var clipboard = new ClipboardProbe();
+    var transaction = clipboard.Capture();
+    var copiedSequence = clipboard.Write("unrelated sensitive content");
+    if (ClipboardCopyAttribution.IsExpectedCopy(42, 99, copiedSequence, clipboard.Sequence))
+    {
+        transaction.RecordChange(copiedSequence);
+    }
+    await transaction.RestoreAsync();
+    Assert(clipboard.Text == "unrelated sensitive content" && clipboard.RestoreCount == 0,
+        "rejected clipboard writer must retain their content");
+}
+
+static async Task CheckClipboardCleanupFailure()
+{
+    var transaction = new ClipboardTransaction(() => 12,
+        _ => Task.FromException(new InvalidOperationException("clipboard busy")));
+    transaction.RecordChange(12);
+    Assert(!await transaction.TryRestoreAsync(), "cleanup failure must return a warning outcome");
+    var originalFailure = new InvalidOperationException("write failed");
+    try
+    {
+        try { throw originalFailure; }
+        finally { await transaction.TryRestoreAsync(); }
+    }
+    catch (InvalidOperationException error)
+    {
+        Assert(ReferenceEquals(error, originalFailure), "cleanup must preserve the original write error");
+    }
 }
 
 static void Assert(bool condition, string message)

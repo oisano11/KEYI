@@ -334,6 +334,11 @@ struct InterfaceStrings: Sendable {
     var localModelServiceUnavailable: String {
         isEnglish ? "Local model service is not running; check LM Studio" : "本地模型服务未启动，请确认 LM Studio 可用"
     }
+    var localModelServiceUntrusted: String {
+        isEnglish
+            ? "Local service identity could not be verified. Use the signed LM Studio desktop app in Applications; standalone runtimes are not supported."
+            : "无法确认本地服务身份。请使用“应用程序”中的已签名 LM Studio 桌面版；暂不支持独立运行时。"
+    }
     var localModelTimeout: String {
         isEnglish ? "The local model timed out while loading or translating" : "本地模型首次加载或翻译超时"
     }
@@ -377,6 +382,17 @@ struct InterfaceStrings: Sendable {
     }
     var terminalWriteFailed: String {
         isEnglish ? "The terminal command could not safely replace the text" : "终端命令未能安全替换，已停止写入"
+    }
+    var terminalRecoveryRequired: String {
+        isEnglish
+            ? "Terminal replacement stopped. Use the KEYI menu to copy or discard the saved original command before translating again."
+            : "终端替换已停止，原命令已保留。请先在 KEYI 菜单中复制或丢弃原命令，再继续翻译。"
+    }
+    var copyOriginalTerminalCommand: String {
+        isEnglish ? "Copy Original Command" : "复制原命令"
+    }
+    var discardOriginalTerminalCommand: String {
+        isEnglish ? "Discard Saved Original Command" : "丢弃已保留的原命令"
     }
     var contentChanged: String {
         isEnglish ? "The input or focus changed; replacement cancelled" : "输入内容或焦点已变化，已取消替换"

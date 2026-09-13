@@ -392,10 +392,18 @@ internal sealed class SettingsForm : Form
 
         if (_preselectProvider.HasValue)
         {
-            _tabs.SelectedIndex = 1;
-            _providerList.SelectedItem = _preselectProvider.Value;
-            LoadProviderFields();
+            NavigateToProvider(_preselectProvider.Value);
         }
+    }
+
+    internal void NavigateToProvider(ProviderId provider)
+    {
+        _tabs.SelectedIndex = 1;
+        if (_providerList.SelectedItem is not ProviderId selected || selected != provider)
+        {
+            _providerList.SelectedItem = provider;
+        }
+        _apiKey.Focus();
     }
 
     private void CloseAfterLanguageChange(InterfaceLanguage resolved)

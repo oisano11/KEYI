@@ -26,6 +26,8 @@
 	<string>15.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>KEYISingleInstanceLockVersion</key>
+	<integer>1</integer>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

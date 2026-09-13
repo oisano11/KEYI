@@ -62,6 +62,9 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     internal static extern uint GetClipboardSequenceNumber();
 
+    [DllImport("user32.dll")]
+    internal static extern nint GetClipboardOwner();
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(
         uint inputCount,
