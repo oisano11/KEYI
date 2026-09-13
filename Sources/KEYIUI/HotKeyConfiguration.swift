@@ -150,30 +150,9 @@ struct HotKeyConfiguration: Codable, Equatable {
 final class HotKeySettingsStore {
     private let defaults: UserDefaults
     private let key = "hotKeyConfiguration"
-    private let legacyMigrationKey = "hotKeyConfiguration.migrated-from-hanyi-v1"
 
-    init(
-        defaults: UserDefaults = .standard,
-        legacyDefaults: UserDefaults? = UserDefaults(
-            suiteName: "com.hanyi.input-translator"
-        )
-    ) {
+    init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        migrateLegacyValue(from: legacyDefaults)
-    }
-
-    private func migrateLegacyValue(from legacyDefaults: UserDefaults?) {
-        guard let legacyDefaults,
-              legacyDefaults !== defaults,
-              defaults.object(forKey: legacyMigrationKey) == nil else {
-            return
-        }
-        defer { defaults.set(true, forKey: legacyMigrationKey) }
-        guard defaults.object(forKey: key) == nil,
-              let legacyValue = legacyDefaults.object(forKey: key) else {
-            return
-        }
-        defaults.set(legacyValue, forKey: key)
     }
 
     var configuration: HotKeyConfiguration {

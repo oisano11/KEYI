@@ -315,11 +315,6 @@ struct InterfaceStrings: Sendable {
     var operationFailed: String { isEnglish ? "Operation failed" : "操作失败" }
 
     var credentialInvalidAccount: String { isEnglish ? "Invalid credential name" : "凭据名称无效" }
-    var credentialUnreadable: String {
-        isEnglish
-            ? "API Key could not be read. Save it again in Translation Services."
-            : "API Key 无法读取，请在“翻译服务”中重新保存一次"
-    }
     var credentialWriteFailed: String { isEnglish ? "Could not save API Key" : "API Key 保存失败" }
 
     var localRuntimeUnavailable: String {

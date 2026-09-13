@@ -15,7 +15,7 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("interface labels", CheckInterfaceLabels),
     ("API error details", CheckApiError),
     ("HTTPS validation", CheckHttpsValidation),
-    ("legacy settings file migration", CheckLegacySettingsFileMigration),
+    ("settings file persistence", CheckSettingsFilePersistence),
     ("focused text fallback policy", CheckFocusedTextFallbackPolicy),
     ("truncated response rejected", CheckTruncatedResponse),
     ("nested clipboard restoration", CheckNestedClipboardRestoration),
@@ -278,42 +278,41 @@ static Task CheckHttpsValidation()
     return Task.CompletedTask;
 }
 
-static Task CheckLegacySettingsFileMigration()
+static Task CheckSettingsFilePersistence()
 {
     var root = Path.Combine(Path.GetTempPath(), $"KEYI.CoreChecks-{Guid.NewGuid():N}");
     var currentPath = Path.Combine(root, "KEYI", "settings.json");
-    var legacyPath = Path.Combine(root, "HanYi", "settings.json");
 
     try
     {
-        var legacy = new AppSettings
+        var settings = new AppSettings
         {
             SelectedProvider = ProviderId.Qwen,
             TargetLanguage = TranslationLanguage.Japanese,
             Scene = TranslationScene.Business,
             EnglishStyle = EnglishStyle.British
         };
-        legacy.EnsureDefaults();
-        legacy.Providers[ProviderId.Qwen] = new ProviderSettings
+        settings.EnsureDefaults();
+        settings.Providers[ProviderId.Qwen] = new ProviderSettings
         {
-            Endpoint = "https://legacy.example.test/chat/completions",
-            Model = "legacy-model"
+            Endpoint = "https://example.test/chat/completions",
+            Model = "test-model"
         };
-        SettingsFileStore.Save(legacyPath, legacy);
+        SettingsFileStore.Save(currentPath, settings);
 
-        var migrated = SettingsFileStore.Load(currentPath, legacyPath);
-        Assert(migrated.SelectedProvider == ProviderId.Qwen, "legacy provider migrated");
-        Assert(migrated.TargetLanguage == TranslationLanguage.Japanese, "legacy language migrated");
+        var loaded = SettingsFileStore.Load(currentPath);
+        Assert(loaded.SelectedProvider == ProviderId.Qwen, "provider persisted");
+        Assert(loaded.TargetLanguage == TranslationLanguage.Japanese, "language persisted");
         Assert(
-            migrated.Providers[ProviderId.Qwen].Endpoint == "https://legacy.example.test/chat/completions",
-            "legacy endpoint migrated");
-        Assert(File.Exists(currentPath), "legacy settings persisted at KEYI path");
+            loaded.Providers[ProviderId.Qwen].Endpoint == "https://example.test/chat/completions",
+            "endpoint persisted");
+        Assert(File.Exists(currentPath), "settings persisted at KEYI path");
 
         var current = new AppSettings { SelectedProvider = ProviderId.XAI };
         current.EnsureDefaults();
         SettingsFileStore.Save(currentPath, current);
-        var currentWins = SettingsFileStore.Load(currentPath, legacyPath);
-        Assert(currentWins.SelectedProvider == ProviderId.XAI, "existing KEYI settings win");
+        var updated = SettingsFileStore.Load(currentPath);
+        Assert(updated.SelectedProvider == ProviderId.XAI, "updated KEYI settings loaded");
     }
     finally
     {

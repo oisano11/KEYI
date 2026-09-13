@@ -31,20 +31,12 @@ enum TranslationSettingsError: LocalizedError {
 final class TranslationSettingsStore {
     private let defaults: UserDefaults
     private let preferencesKey = "translation.preferences"
-    private let legacyMigrationKey = "translation.migrated-from-hanyi-v1"
 
     private(set) var preferences: TranslationPreferences
 
-    init(
-        defaults: UserDefaults = .standard,
-        legacyDefaults: UserDefaults? = UserDefaults(
-            suiteName: "com.hanyi.input-translator"
-        )
-    ) {
+    init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         self.preferences = TranslationPreferences()
-        let didMigrateLegacyValues = migrateLegacyValues(from: legacyDefaults)
-        removeLegacyTestLocalModelConfiguration(if: didMigrateLegacyValues)
         if let data = defaults.data(forKey: preferencesKey),
            let stored = try? JSONDecoder().decode(
                TranslationPreferences.self,
@@ -74,30 +66,6 @@ final class TranslationSettingsStore {
             persistPreferences()
         }
         migrateLegacyVolcengineConfigurationIfNeeded()
-    }
-
-    @discardableResult
-    private func migrateLegacyValues(from legacyDefaults: UserDefaults?) -> Bool {
-        guard let legacyDefaults,
-              legacyDefaults !== defaults,
-              defaults.object(forKey: legacyMigrationKey) == nil else {
-            return false
-        }
-        defer { defaults.set(true, forKey: legacyMigrationKey) }
-
-        var didMigrateValue = false
-        var keys = [preferencesKey, localEndpointKey, localModelKey]
-        for providerID in APITranslationProviderCatalog.profiles.map(\.providerID) {
-            keys.append(endpointKey(for: providerID))
-            keys.append(modelKey(for: providerID))
-        }
-        for key in keys where defaults.object(forKey: key) == nil {
-            if let legacyValue = legacyDefaults.object(forKey: key) {
-                defaults.set(legacyValue, forKey: key)
-                didMigrateValue = true
-            }
-        }
-        return didMigrateValue
     }
 
     func select(_ providerID: TranslationProviderID) -> Bool {
@@ -303,18 +271,6 @@ final class TranslationSettingsStore {
         if let storedModel, model != storedModel {
             defaults.set(model, forKey: modelKey(for: .volcengine))
         }
-    }
-
-    private func removeLegacyTestLocalModelConfiguration(if didMigrateLegacyValues: Bool) {
-        guard didMigrateLegacyValues,
-              defaults.string(forKey: localEndpointKey)
-                == LocalModelCatalog.gemma4.defaultEndpoint,
-              defaults.string(forKey: localModelKey)
-                == LocalModelCatalog.gemma4.defaultModel else {
-            return
-        }
-        defaults.removeObject(forKey: localEndpointKey)
-        defaults.removeObject(forKey: localModelKey)
     }
 
     private static let logger = Logger(

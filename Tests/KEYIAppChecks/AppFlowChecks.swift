@@ -13,13 +13,13 @@ func runAppFlowChecks() async throws -> Int {
     let suite = "KEYIAppFlowChecks-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
-    let settings = TranslationSettingsStore(defaults: defaults, legacyDefaults: nil)
+    let settings = TranslationSettingsStore(defaults: defaults)
     _ = settings.select(.qwen)
     var presentations = 0
     let input = FlowTextAccess()
     let configurationModel = AppModel(
         settings: settings,
-        hotKeySettings: HotKeySettingsStore(defaults: defaults, legacyDefaults: nil),
+        hotKeySettings: HotKeySettingsStore(defaults: defaults),
         accessibility: input,
         presentSettings: { presentations += 1 }
     )
@@ -33,7 +33,7 @@ func runAppFlowChecks() async throws -> Int {
     _ = settings.select(.appleSystem)
     let model = AppModel(
         settings: settings,
-        hotKeySettings: HotKeySettingsStore(defaults: defaults, legacyDefaults: nil),
+        hotKeySettings: HotKeySettingsStore(defaults: defaults),
         accessibility: input,
         presentSettings: {}
     )
