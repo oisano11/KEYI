@@ -18,8 +18,7 @@ let settingsSuiteName = "KEYIAppChecks-\(UUID().uuidString)"
 let settingsDefaults = UserDefaults(suiteName: settingsSuiteName)!
 
 let store = TranslationSettingsStore(
-    defaults: settingsDefaults,
-    legacyDefaults: nil
+    defaults: settingsDefaults
 )
 expect(store.preferences.providerID == .appleSystem, "新用户默认使用系统翻译")
 expect(store.preferences.targetLanguage == .english, "新用户默认英语")
@@ -102,114 +101,6 @@ expect(
 )
 settingsDefaults.removePersistentDomain(forName: settingsSuiteName)
 
-let legacyTestSourceSuiteName = "KEYIAppChecks-Legacy-Test-Source-\(UUID().uuidString)"
-let legacyTestSuiteName = "KEYIAppChecks-Legacy-Test-\(UUID().uuidString)"
-let legacyTestSourceDefaults = UserDefaults(suiteName: legacyTestSourceSuiteName)!
-let legacyTestDefaults = UserDefaults(suiteName: legacyTestSuiteName)!
-legacyTestSourceDefaults.set(
-    LocalModelCatalog.gemma4.defaultEndpoint,
-    forKey: "translation.local.endpoint"
-)
-legacyTestSourceDefaults.set(
-    LocalModelCatalog.gemma4.defaultModel,
-    forKey: "translation.local.gemma4.model"
-)
-let cleanedLegacyTestStore = TranslationSettingsStore(
-    defaults: legacyTestDefaults,
-    legacyDefaults: legacyTestSourceDefaults
-)
-expect(
-    cleanedLegacyTestStore.configuredLocalModelEndpoint() == nil
-        && cleanedLegacyTestStore.configuredLocalModelName() == nil,
-    "迁移进来的旧测试本地模型配置应自动清除"
-)
-try cleanedLegacyTestStore.saveLocalModelConfiguration(
-    endpoint: LocalModelCatalog.gemma4.defaultEndpoint,
-    model: LocalModelCatalog.gemma4.defaultModel
-)
-let reloadedLegacyTestStore = TranslationSettingsStore(
-    defaults: legacyTestDefaults,
-    legacyDefaults: legacyTestSourceDefaults
-)
-expect(
-    reloadedLegacyTestStore.configuredLocalModelEndpoint() == LocalModelCatalog.gemma4.defaultEndpoint
-        && reloadedLegacyTestStore.configuredLocalModelName() == LocalModelCatalog.gemma4.defaultModel,
-    "用户主动保存默认本地模型配置后不应在下次启动被删除"
-)
-legacyTestSourceDefaults.removePersistentDomain(forName: legacyTestSourceSuiteName)
-legacyTestDefaults.removePersistentDomain(forName: legacyTestSuiteName)
-
-// MARK: - HanYi -> KEYI UserDefaults migration
-
-let legacySettingsSuiteName = "KEYIAppChecks-Legacy-\(UUID().uuidString)"
-let migratedSettingsSuiteName = "KEYIAppChecks-Migrated-\(UUID().uuidString)"
-let currentSettingsSuiteName = "KEYIAppChecks-Current-\(UUID().uuidString)"
-let legacySettingsDefaults = UserDefaults(suiteName: legacySettingsSuiteName)!
-let migratedSettingsDefaults = UserDefaults(suiteName: migratedSettingsSuiteName)!
-let currentSettingsDefaults = UserDefaults(suiteName: currentSettingsSuiteName)!
-
-let legacyPreferences = TranslationPreferences(
-    providerID: .qwen,
-    targetLanguage: .japanese,
-    scene: .business,
-    englishStyle: .british
-)
-legacySettingsDefaults.set(
-    try! JSONEncoder().encode(legacyPreferences),
-    forKey: "translation.preferences"
-)
-legacySettingsDefaults.set(
-    "https://legacy.example.test/v1/chat/completions",
-    forKey: "translation.api.qwen.endpoint"
-)
-legacySettingsDefaults.set(
-    "legacy-qwen",
-    forKey: "translation.api.qwen.model"
-)
-legacySettingsDefaults.set(
-    "http://127.0.0.1:9123/v1/chat/completions",
-    forKey: "translation.local.endpoint"
-)
-legacySettingsDefaults.set(
-    "legacy-local-model",
-    forKey: "translation.local.gemma4.model"
-)
-
-let migratedStore = TranslationSettingsStore(
-    defaults: migratedSettingsDefaults,
-    legacyDefaults: legacySettingsDefaults
-)
-expect(migratedStore.preferences == legacyPreferences, "旧版翻译偏好应迁移到 KEYI 域")
-expect(
-    migratedStore.endpoint(for: .qwen) == "https://legacy.example.test/v1/chat/completions",
-    "旧版 API Endpoint 应迁移到 KEYI 域"
-)
-expect(migratedStore.model(for: .qwen) == "legacy-qwen", "旧版模型名应迁移到 KEYI 域")
-expect(
-    migratedStore.localModelEndpoint() == "http://127.0.0.1:9123/v1/chat/completions",
-    "旧版本地模型 Endpoint 应迁移到 KEYI 域"
-)
-expect(migratedStore.localModelName() == "legacy-local-model", "旧版本地模型名应迁移到 KEYI 域")
-
-let currentPreferences = TranslationPreferences(providerID: .deepSeek)
-currentSettingsDefaults.set(
-    try! JSONEncoder().encode(currentPreferences),
-    forKey: "translation.preferences"
-)
-currentSettingsDefaults.set(
-    "https://current.example.test/v1/chat/completions",
-    forKey: "translation.api.qwen.endpoint"
-)
-let currentStore = TranslationSettingsStore(
-    defaults: currentSettingsDefaults,
-    legacyDefaults: legacySettingsDefaults
-)
-expect(currentStore.preferences == currentPreferences, "已有 KEYI 翻译偏好必须优先")
-expect(
-    currentStore.endpoint(for: .qwen) == "https://current.example.test/v1/chat/completions",
-    "已有 KEYI API Endpoint 必须优先"
-)
-
 // MARK: - HotKeyConfiguration / HotKeySettingsStore
 
 expect(HotKeyConfiguration.default.isValid, "默认快捷键 ⌥T 应有效")
@@ -224,8 +115,7 @@ expect(decodedHotKey == HotKeyConfiguration.default, "快捷键配置应可往�
 let hotKeySuiteName = "KEYIAppChecks-HotKey-\(UUID().uuidString)"
 let hotKeyDefaults = UserDefaults(suiteName: hotKeySuiteName)!
 let hotKeyStore = HotKeySettingsStore(
-    defaults: hotKeyDefaults,
-    legacyDefaults: nil
+    defaults: hotKeyDefaults
 )
 expect(
     hotKeyStore.configuration == .default,
@@ -238,7 +128,7 @@ expect(
 )
 hotKeyDefaults.set(Data("{}".utf8), forKey: "hotKeyConfiguration")
 expect(
-    HotKeySettingsStore(defaults: hotKeyDefaults, legacyDefaults: nil).configuration == .default,
+    HotKeySettingsStore(defaults: hotKeyDefaults).configuration == .default,
     "无法解码的数据应回退默认快捷键"
 )
 hotKeyDefaults.set(
@@ -246,38 +136,10 @@ hotKeyDefaults.set(
     forKey: "hotKeyConfiguration"
 )
 expect(
-    HotKeySettingsStore(defaults: hotKeyDefaults, legacyDefaults: nil).configuration == .default,
+    HotKeySettingsStore(defaults: hotKeyDefaults).configuration == .default,
     "无修饰键的非法配置应回退默认快捷键"
 )
 hotKeyDefaults.removePersistentDomain(forName: hotKeySuiteName)
-
-let legacyHotKeyData = try! JSONEncoder().encode(HotKeyConfiguration.default)
-legacySettingsDefaults.set(legacyHotKeyData, forKey: "hotKeyConfiguration")
-let migratedHotKeyStore = HotKeySettingsStore(
-    defaults: migratedSettingsDefaults,
-    legacyDefaults: legacySettingsDefaults
-)
-expect(migratedHotKeyStore.configuration == .default, "旧版快捷键应迁移到 KEYI 域")
-expect(
-    migratedSettingsDefaults.data(forKey: "hotKeyConfiguration") == legacyHotKeyData,
-    "迁移后的 KEYI 快捷键数据应保留"
-)
-
-let alternateHotKey = try! JSONDecoder().decode(
-    HotKeyConfiguration.self,
-    from: Data("{\"keyCode\":11,\"modifiers\":2048,\"keyName\":\"B\"}".utf8)
-)
-let currentHotKeyData = try! JSONEncoder().encode(alternateHotKey)
-currentSettingsDefaults.set(currentHotKeyData, forKey: "hotKeyConfiguration")
-let currentHotKeyStore = HotKeySettingsStore(
-    defaults: currentSettingsDefaults,
-    legacyDefaults: legacySettingsDefaults
-)
-expect(currentHotKeyStore.configuration == alternateHotKey, "已有 KEYI 快捷键必须优先")
-
-legacySettingsDefaults.removePersistentDomain(forName: legacySettingsSuiteName)
-migratedSettingsDefaults.removePersistentDomain(forName: migratedSettingsSuiteName)
-currentSettingsDefaults.removePersistentDomain(forName: currentSettingsSuiteName)
 
 // MARK: - Async write-back cancellation gate
 
@@ -332,27 +194,6 @@ do {
 try CredentialStore.delete(account: credentialAccount)
 let deletedRead: String? = try CredentialStore.read(account: credentialAccount)
 expect(deletedRead == nil, "删除后条目应消失")
-
-// MARK: - 旧明文凭据自动迁移
-
-let legacyDirectory = FileManager.default
-    .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-    .appendingPathComponent("HanYi/Credentials-v1", isDirectory: true)
-try FileManager.default.createDirectory(
-    at: legacyDirectory,
-    withIntermediateDirectories: true
-)
-let legacyFile = legacyDirectory
-    .appendingPathComponent("\(credentialAccount).secret")
-try Data("legacy-secret".utf8).write(to: legacyFile)
-
-let migrated: String? = try CredentialStore.read(account: credentialAccount)
-expect(migrated == "legacy-secret", "旧明文凭据应自动迁移到钥匙串")
-expect(
-    !FileManager.default.fileExists(atPath: legacyFile.path),
-    "迁移后应删除明文文件"
-)
-try CredentialStore.delete(account: credentialAccount)
 
 // MARK: - 云端提供方错误按界面语言渲染
 

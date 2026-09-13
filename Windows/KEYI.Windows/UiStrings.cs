@@ -395,7 +395,7 @@ internal sealed class UiStrings
         return message switch
         {
             _ when string.IsNullOrWhiteSpace(message) => OperationFailed,
-            _ => message.Replace("HanYi", AppName, StringComparison.Ordinal)
+            _ => message
         };
     }
 }

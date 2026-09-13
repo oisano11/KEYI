@@ -208,7 +208,7 @@ public struct LocalModelProfile: Equatable, Sendable {
 public enum LocalModelCatalog {
     public static let gemma4 = LocalModelProfile(
         defaultEndpoint: "http://127.0.0.1:1234/v1/chat/completions",
-        defaultModel: "hanyi-gemma4",
+        defaultModel: "keyi-gemma4",
         defaultLoadKey: "gemma-4-12b-it",
         completionTokenBudget: 1024,
         idleTTLSeconds: 180

@@ -113,8 +113,8 @@ let defaults = UserDefaults(suiteName: suite)!
 defer { defaults.removePersistentDomain(forName: suite) }
 private let access = FakeTextAccess()
 let model = AppModel(
-    settings: TranslationSettingsStore(defaults: defaults, legacyDefaults: nil),
-    hotKeySettings: HotKeySettingsStore(defaults: defaults, legacyDefaults: nil),
+    settings: TranslationSettingsStore(defaults: defaults),
+    hotKeySettings: HotKeySettingsStore(defaults: defaults),
     accessibility: access
 )
 await model.triggerTranslation()

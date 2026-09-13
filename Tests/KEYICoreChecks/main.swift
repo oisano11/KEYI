@@ -140,7 +140,7 @@ expect(
     "Gemma 4 默认 Endpoint 应指向 LM Studio 本地服务"
 )
 expect(
-    LocalModelCatalog.gemma4.defaultModel == "hanyi-gemma4"
+    LocalModelCatalog.gemma4.defaultModel == "keyi-gemma4"
         && LocalModelCatalog.gemma4.defaultLoadKey == "gemma-4-12b-it",
     "Gemma 4 应有稳定的本地服务模型标识和加载键"
 )
