@@ -3,7 +3,6 @@ import Security
 
 enum CredentialStoreError: LocalizedError {
     case invalidAccount
-    case unreadableCredential
     case writeFailed
 
     var errorDescription: String? {
@@ -11,8 +10,6 @@ enum CredentialStoreError: LocalizedError {
         return switch self {
         case .invalidAccount:
             strings.credentialInvalidAccount
-        case .unreadableCredential:
-            strings.credentialUnreadable
         case .writeFailed:
             strings.credentialWriteFailed
         }
@@ -22,29 +19,13 @@ enum CredentialStoreError: LocalizedError {
 enum CredentialStore {
     private static let keychainService = "com.keyi.credentials"
 
-    // 旧版本把 Key 明文存在应用私有目录；读取到即迁入钥匙串并删除明文文件。
-    private static let legacyDirectoryName = "HanYi/Credentials-v1"
-
     private static let allowedAccountCharacters = CharacterSet(
         charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
     )
 
     static func read(account: String) throws -> String? {
         try validateAccount(account)
-        if let value = readFromKeychain(account: account) {
-            return value
-        }
-
-        guard let value = try readLegacyCredential(account: account) else {
-            return nil
-        }
-        do {
-            try saveToKeychain(value, account: account)
-            removeLegacyCredential(account: account)
-        } catch {
-            // 迁移失败不影响本次读取；明文文件保留，下次读取会重试迁移。
-        }
-        return value
+        return readFromKeychain(account: account)
     }
 
     static func save(_ value: String, account: String) throws {
@@ -54,17 +35,15 @@ enum CredentialStore {
         } catch {
             throw CredentialStoreError.writeFailed
         }
-        removeLegacyCredential(account: account)
     }
 
-    /// 删除指定账户的凭据；条目不存在视为成功，并顺带清理遗留明文文件。
+    /// 删除指定账户的凭据；条目不存在视为成功。
     static func delete(account: String) throws {
         try validateAccount(account)
         let status = SecItemDelete(keychainQuery(account: account) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw CredentialStoreError.writeFailed
         }
-        removeLegacyCredential(account: account)
     }
 
     private static func validateAccount(_ account: String) throws {
@@ -120,33 +99,6 @@ enum CredentialStore {
         let addStatus = SecItemAdd(attributes as CFDictionary, nil)
         guard addStatus == errSecSuccess else {
             throw CredentialStoreError.writeFailed
-        }
-    }
-
-    private static func legacyCredentialURL(account: String) -> URL? {
-        FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first?
-            .appendingPathComponent(legacyDirectoryName, isDirectory: true)
-            .appendingPathComponent("\(account).secret", isDirectory: false)
-    }
-
-    private static func readLegacyCredential(account: String) throws -> String? {
-        guard let url = legacyCredentialURL(account: account),
-              FileManager.default.fileExists(atPath: url.path) else {
-            return nil
-        }
-        guard let data = try? Data(contentsOf: url),
-              let value = String(data: data, encoding: .utf8),
-              !value.isEmpty else {
-            throw CredentialStoreError.unreadableCredential
-        }
-        return value
-    }
-
-    private static func removeLegacyCredential(account: String) {
-        if let url = legacyCredentialURL(account: account) {
-            try? FileManager.default.removeItem(at: url)
         }
     }
 }

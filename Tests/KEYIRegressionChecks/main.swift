@@ -1,7 +1,14 @@
+import AppKit
 import ApplicationServices
 import Foundation
+import Darwin
 import KEYICore
 @testable import KEYIUI
+
+if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--instance-lock-probe" {
+    let probe = try InstanceLock(path: CommandLine.arguments[2])
+    exit(probe == nil ? 23 : 0)
+}
 
 private var checkCount = 0
 
@@ -37,12 +44,77 @@ private final class FakeTextAccess: FocusedTextAccess {
 }
 
 let suite = "KEYIRegressionChecks-\(UUID().uuidString)"
+let lockDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+try FileManager.default.createDirectory(at: lockDirectory, withIntermediateDirectories: true)
+defer { try? FileManager.default.removeItem(at: lockDirectory) }
+let lockPath = lockDirectory.appendingPathComponent("instance.lock").path
+func probeInstanceLock() throws -> Int32 {
+    let child = Process()
+    child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+    child.arguments = ["--instance-lock-probe", lockPath]
+    try child.run()
+    child.waitUntilExit()
+    return child.terminationStatus
+}
+var instanceLock = try InstanceLock(path: lockPath)
+expect(instanceLock != nil, "First process must acquire the instance lock")
+let duplicateStatus = try probeInstanceLock()
+expect(duplicateStatus == 23, "A second process must be rejected while the owner is alive")
+instanceLock = nil
+let releasedStatus = try probeInstanceLock()
+expect(releasedStatus == 0, "A remaining lock file must not prevent restart after owner exit")
+// A successful AX selection setter may be acknowledged before its range is visible.
+var selectionPolls = 0
+var selectionWaits = 0
+var selectionRequests = 0
+var preparedPastes = 0
+try await AccessibilityTextClient.waitForSelectionUpdate(requestSelection: {
+    selectionRequests += 1
+}, isReady: {
+    selectionPolls += 1
+    return selectionPolls >= 3
+}, pause: { selectionWaits += 1 })
+preparedPastes += 1
+expect(selectionPolls == 3 && selectionWaits == 2 && selectionRequests == 1 && preparedPastes == 1,
+       "The first request must wait for its asynchronous selection update")
+var immediateWaits = 0
+try await AccessibilityTextClient.waitForSelectionUpdate(requestSelection: {}, isReady: { true }, pause: {
+    immediateWaits += 1
+})
+expect(immediateWaits == 0, "Ready selections must not incur a fixed delay")
+var timedOut = false
+var timeoutPolls = 0
+do {
+    try await AccessibilityTextClient.waitForSelectionUpdate(requestSelection: {}, isReady: {
+        timeoutPolls += 1
+        return false
+    }, pause: {})
+    preparedPastes += 1
+} catch AccessibilityTextClient.Error.selectionUpdateTimedOut { timedOut = true }
+expect(timedOut && timeoutPolls == 21 && preparedPastes == 1,
+       "Unacknowledged selections must stop before paste after bounded polling")
+var abortedForChange = false
+do {
+    try await AccessibilityTextClient.waitForSelectionUpdate(requestSelection: {}, isReady: {
+        throw AccessibilityTextClient.Error.contentChanged
+    }, pause: { fatalError("Target or content changes must not be retried") })
+    preparedPastes += 1
+} catch AccessibilityTextClient.Error.contentChanged { abortedForChange = true }
+expect(abortedForChange && preparedPastes == 1, "Changed targets or contents must prevent paste")
+var selectionCancelled = false
+do {
+    try await AccessibilityTextClient.waitForSelectionUpdate(requestSelection: {}, isReady: { false }, pause: {
+        throw CancellationError()
+    })
+    preparedPastes += 1
+} catch is CancellationError { selectionCancelled = true }
+expect(selectionCancelled && preparedPastes == 1, "Cancellation while waiting must prevent paste")
 let defaults = UserDefaults(suiteName: suite)!
 defer { defaults.removePersistentDomain(forName: suite) }
 private let access = FakeTextAccess()
 let model = AppModel(
-    settings: TranslationSettingsStore(defaults: defaults, legacyDefaults: nil),
-    hotKeySettings: HotKeySettingsStore(defaults: defaults, legacyDefaults: nil),
+    settings: TranslationSettingsStore(defaults: defaults),
+    hotKeySettings: HotKeySettingsStore(defaults: defaults),
     accessibility: access
 )
 await model.triggerTranslation()
@@ -184,7 +256,8 @@ let provider = LocalModelTranslationProvider(
         endpoint: URL(string: "http://keyi-regression.invalid/v1/chat/completions")!,
         model: "test-model", loadKey: "test-model"
     ),
-    session: session
+    session: session,
+    validateEndpoint: { _ in }
 )
 let request = TextTranslationRequest(sourceText: "Test input")
 CompletionStub.responses = [completion("Partial", reason: "length"), completion("Complete.", reason: "stop")]
@@ -218,5 +291,36 @@ expect(reasoningRejected, "Unclosed reasoning must not be written as a translati
 CompletionStub.responses = [completion("<think>Reasoning</think>\nFinal.", reason: "stop")]
 let cleaned = try await provider.translate(request)
 expect(cleaned == "Final.", "Completed reasoning must be stripped without losing the translation")
+
+expect(AccessibilityTextClient.pasteMatchesExpected("before translated after", expected: "before translated after"), "Exact browser replacement must succeed")
+expect(AccessibilityTextClient.browserWriteStrategy(isWebInput: true, selectionRangeIsSettable: false) == .keyboardFallback, "Web inputs must never fall through to direct AXValue writes")
+expect(AccessibilityTextClient.browserWriteStrategy(isWebInput: true, selectionRangeIsSettable: true) == .paste, "Web inputs with writable selection must use paste")
+expect(AccessibilityTextClient.browserWriteStrategy(isWebInput: false, selectionRangeIsSettable: true) == .notWeb, "Native inputs must retain native writeback")
+expect(AccessibilityTextClient.browserWriteStrategy(isWebInput: false, selectionRangeIsSettable: false) == .notWeb, "Native inputs without writable selection must retain native writeback")
+expect(AccessibilityTextClient.Error.terminalRecoveryRequired(originalText: "private source").diagnosticCode == "terminal_recovery_required", "Diagnostic categories must exclude recovery text")
+expect(AccessibilityTextClient.verifiedSelectionText(selectedText: "选中", value: nil, range: nil) == "选中", "Opaque value with AX selected text must remain supported")
+expect(AccessibilityTextClient.verifiedSelectionText(selectedText: nil, value: "a中文b", range: NSRange(location: 1, length: 2)) == "中文", "Readable AX range must support selected text fallback")
+expect(AccessibilityTextClient.verifiedSelectionText(selectedText: nil, value: nil, range: nil) == nil, "A clipboard-only control cannot supply attributed source text")
+expect(AccessibilityTextClient.verifiedSelectionText(selectedText: nil, value: "a", range: NSRange(location: NSNotFound, length: 4)) == nil, "Invalid AX ranges must fail closed without overflowing")
+expect(!AccessibilityTextClient.pasteMatchesExpected("translated old original x", expected: "translated new original"), "Existing translated substring plus unrelated edits must not pass writeback")
+expect(!AccessibilityTextClient.pasteMatchesExpected("before translated after extra", expected: "before translated after"), "Browser verification must reject misplaced or extra input")
+
+let isolatedPasteboard = NSPasteboard.withUniqueName()
+defer { isolatedPasteboard.releaseGlobally() }
+isolatedPasteboard.setString("original", forType: .string)
+let clearedScope = ScopedPasteboard(pasteboard: isolatedPasteboard)
+isolatedPasteboard.clearContents()
+clearedScope.trackLatestChange()
+clearedScope.restoreIfUnchanged()
+expect(isolatedPasteboard.string(forType: .string) == "original", "Failure after clearing must restore original clipboard")
+let concurrentScope = ScopedPasteboard(pasteboard: isolatedPasteboard)
+isolatedPasteboard.clearContents()
+isolatedPasteboard.setString("temporary translation", forType: .string)
+concurrentScope.trackLatestChange()
+isolatedPasteboard.clearContents()
+isolatedPasteboard.setString("user copied later", forType: .string)
+expect(!concurrentScope.isUnchanged, "Concurrent clipboard update must invalidate pending paste")
+concurrentScope.restoreIfUnchanged()
+expect(isolatedPasteboard.string(forType: .string) == "user copied later", "Restoration must preserve concurrent clipboard updates")
 
 print("KEYI regression checks passed: \(checkCount)")

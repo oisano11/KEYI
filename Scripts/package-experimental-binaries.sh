@@ -8,8 +8,8 @@ OUTPUT_DIR="$ROOT_DIR/.build/binary-release"
 MAC_APP="$ROOT_DIR/.build/KEYI 可译.app"
 WINDOWS_DIR="$ROOT_DIR/.build/windows"
 
-if [[ -n "$(git -C "$ROOT_DIR" status --porcelain --untracked-files=no)" ]]; then
-    echo "错误：工作树存在未提交的跟踪文件；请先提交后再打包。" >&2
+if [[ -n "$(git -C "$ROOT_DIR" status --porcelain --untracked-files=all)" ]]; then
+    echo "错误：工作树存在未提交的修改或未跟踪文件；请先处理后再打包。" >&2
     exit 2
 fi
 

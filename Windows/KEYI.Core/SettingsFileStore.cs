@@ -4,32 +4,11 @@ namespace KEYI.Core;
 
 public static class SettingsFileStore
 {
-    public static AppSettings Load(string currentPath, string legacyPath)
+    public static AppSettings Load(string currentPath)
     {
         if (TryLoad(currentPath, out var currentSettings))
         {
             return currentSettings;
-        }
-
-        // A current file, even a corrupt one, is authoritative. Do not overwrite
-        // a user's newer state with values from the retired application path.
-        if (File.Exists(currentPath))
-        {
-            return DefaultSettings();
-        }
-
-        if (TryLoad(legacyPath, out var legacySettings))
-        {
-            try
-            {
-                Save(currentPath, legacySettings);
-            }
-            catch
-            {
-                // Returning usable legacy settings keeps startup non-blocking;
-                // the next launch can retry persisting the one-time migration.
-            }
-            return legacySettings;
         }
 
         return DefaultSettings();

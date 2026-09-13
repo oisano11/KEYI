@@ -15,13 +15,15 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("interface labels", CheckInterfaceLabels),
     ("API error details", CheckApiError),
     ("HTTPS validation", CheckHttpsValidation),
-    ("legacy settings file migration", CheckLegacySettingsFileMigration),
+    ("settings file persistence", CheckSettingsFilePersistence),
     ("focused text fallback policy", CheckFocusedTextFallbackPolicy),
     ("truncated response rejected", CheckTruncatedResponse),
     ("nested clipboard restoration", CheckNestedClipboardRestoration),
     ("clipboard user change preserved", CheckClipboardUserChange),
     ("untouched clipboard not restored", CheckUntouchedClipboard),
     ("clipboard restored after verification failure", CheckClipboardVerificationFailure),
+    ("clipboard cleanup failure is separate", CheckClipboardCleanupFailure),
+    ("clipboard attribution rejects unrelated writers", CheckClipboardAttribution),
 };
 
 foreach (var check in checks)
@@ -276,42 +278,41 @@ static Task CheckHttpsValidation()
     return Task.CompletedTask;
 }
 
-static Task CheckLegacySettingsFileMigration()
+static Task CheckSettingsFilePersistence()
 {
     var root = Path.Combine(Path.GetTempPath(), $"KEYI.CoreChecks-{Guid.NewGuid():N}");
     var currentPath = Path.Combine(root, "KEYI", "settings.json");
-    var legacyPath = Path.Combine(root, "HanYi", "settings.json");
 
     try
     {
-        var legacy = new AppSettings
+        var settings = new AppSettings
         {
             SelectedProvider = ProviderId.Qwen,
             TargetLanguage = TranslationLanguage.Japanese,
             Scene = TranslationScene.Business,
             EnglishStyle = EnglishStyle.British
         };
-        legacy.EnsureDefaults();
-        legacy.Providers[ProviderId.Qwen] = new ProviderSettings
+        settings.EnsureDefaults();
+        settings.Providers[ProviderId.Qwen] = new ProviderSettings
         {
-            Endpoint = "https://legacy.example.test/chat/completions",
-            Model = "legacy-model"
+            Endpoint = "https://example.test/chat/completions",
+            Model = "test-model"
         };
-        SettingsFileStore.Save(legacyPath, legacy);
+        SettingsFileStore.Save(currentPath, settings);
 
-        var migrated = SettingsFileStore.Load(currentPath, legacyPath);
-        Assert(migrated.SelectedProvider == ProviderId.Qwen, "legacy provider migrated");
-        Assert(migrated.TargetLanguage == TranslationLanguage.Japanese, "legacy language migrated");
+        var loaded = SettingsFileStore.Load(currentPath);
+        Assert(loaded.SelectedProvider == ProviderId.Qwen, "provider persisted");
+        Assert(loaded.TargetLanguage == TranslationLanguage.Japanese, "language persisted");
         Assert(
-            migrated.Providers[ProviderId.Qwen].Endpoint == "https://legacy.example.test/chat/completions",
-            "legacy endpoint migrated");
-        Assert(File.Exists(currentPath), "legacy settings persisted at KEYI path");
+            loaded.Providers[ProviderId.Qwen].Endpoint == "https://example.test/chat/completions",
+            "endpoint persisted");
+        Assert(File.Exists(currentPath), "settings persisted at KEYI path");
 
         var current = new AppSettings { SelectedProvider = ProviderId.XAI };
         current.EnsureDefaults();
         SettingsFileStore.Save(currentPath, current);
-        var currentWins = SettingsFileStore.Load(currentPath, legacyPath);
-        Assert(currentWins.SelectedProvider == ProviderId.XAI, "existing KEYI settings win");
+        var updated = SettingsFileStore.Load(currentPath);
+        Assert(updated.SelectedProvider == ProviderId.XAI, "updated KEYI settings loaded");
     }
     finally
     {
@@ -430,6 +431,42 @@ static async Task CheckClipboardVerificationFailure()
     }
     Assert(failed && clipboard.Text == "original" && clipboard.RestoreCount == 1,
         "verification failure must still restore the original clipboard");
+}
+
+static async Task CheckClipboardAttribution()
+{
+    Assert(ClipboardCopyAttribution.IsExpectedCopy(42, 42, 101, 101), "target-owned stable copy accepted");
+    Assert(!ClipboardCopyAttribution.IsExpectedCopy(42, 99, 101, 101), "unrelated writer rejected despite changed sequence");
+    Assert(!ClipboardCopyAttribution.IsExpectedCopy(0, 0, 101, 101), "unknown owner rejected");
+    Assert(!ClipboardCopyAttribution.IsExpectedCopy(42, 42, 101, 102), "text changed during read rejected");
+    var clipboard = new ClipboardProbe();
+    var transaction = clipboard.Capture();
+    var copiedSequence = clipboard.Write("unrelated sensitive content");
+    if (ClipboardCopyAttribution.IsExpectedCopy(42, 99, copiedSequence, clipboard.Sequence))
+    {
+        transaction.RecordChange(copiedSequence);
+    }
+    await transaction.RestoreAsync();
+    Assert(clipboard.Text == "unrelated sensitive content" && clipboard.RestoreCount == 0,
+        "rejected clipboard writer must retain their content");
+}
+
+static async Task CheckClipboardCleanupFailure()
+{
+    var transaction = new ClipboardTransaction(() => 12,
+        _ => Task.FromException(new InvalidOperationException("clipboard busy")));
+    transaction.RecordChange(12);
+    Assert(!await transaction.TryRestoreAsync(), "cleanup failure must return a warning outcome");
+    var originalFailure = new InvalidOperationException("write failed");
+    try
+    {
+        try { throw originalFailure; }
+        finally { await transaction.TryRestoreAsync(); }
+    }
+    catch (InvalidOperationException error)
+    {
+        Assert(ReferenceEquals(error, originalFailure), "cleanup must preserve the original write error");
+    }
 }
 
 static void Assert(bool condition, string message)

@@ -1,3 +1,3 @@
 import KEYIUI
 
-KEYIApp.main()
+KEYILauncher.run()
