@@ -225,6 +225,7 @@ expect(englishStrings.translationMethod == "Translation", "英文翻译服务菜
 expect(englishStrings.targetLanguage == "Language", "英文目标语言应使用 Language")
 expect(englishStrings.scene == "Context", "英文使用场景应使用 Context")
 expect(englishStrings.style == "Style", "英文表达风格应使用 Style")
+expect(englishStrings.styleName(.westCoast) == "Casual US", "轻松美式不应承诺具体地域身份")
 expect(englishStrings.languageName(.chinese) == "Chinese", "英文界面应显示 Chinese")
 
 /// 在指定界面语言下渲染错误，避免依赖测试机的系统语言。

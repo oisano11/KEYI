@@ -108,7 +108,7 @@ internal sealed class UiStrings
     {
         EnglishStyle.Automatic => IsEnglish ? "Natural" : "自然",
         EnglishStyle.StandardAmerican => IsEnglish ? "US English" : "美国英语",
-        EnglishStyle.WestCoast => IsEnglish ? "West Coast" : "轻松美式",
+        EnglishStyle.WestCoast => IsEnglish ? "Casual US" : "轻松美式",
         EnglishStyle.BlackAmerican => IsEnglish ? "Black American" : "黑人英语",
         EnglishStyle.British => IsEnglish ? "UK English" : "英国英语",
         _ => style.ToString()
