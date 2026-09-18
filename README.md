@@ -126,4 +126,4 @@ Scripts/package-experimental-binaries.sh
 
 ## 状态
 
-当前源码版本为 1.1.7。实验二进制只用于自愿测试；Windows 10/11 真机的安装、升级、重启和签名验证仍未完成，macOS 实验包也未通过 Gatekeeper 公证。
+当前源码版本为 1.1.8，更新英语风格提示词，优先地道表达并保留原意、关系和情绪。实验二进制只用于自愿测试；Windows 10/11 真机的安装、升级、重启和签名验证仍未完成，macOS 实验包也未通过 Gatekeeper 公证。

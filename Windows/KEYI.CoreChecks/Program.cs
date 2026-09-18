@@ -13,6 +13,7 @@ var checks = new List<(string Name, Func<Task> Run)>
     ("volcengine chat completions request", CheckVolcengineChatCompletionsRequest),
     ("volcengine settings migration", CheckVolcengineSettingsMigration),
     ("interface labels", CheckInterfaceLabels),
+    ("English style contract", CheckEnglishStyleContract),
     ("API error details", CheckApiError),
     ("HTTPS validation", CheckHttpsValidation),
     ("settings file persistence", CheckSettingsFilePersistence),
@@ -131,7 +132,7 @@ static async Task CheckSuccessfulRequest()
         .GetProperty("content")
         .GetString()!;
     Assert(systemContent.Contains("zh-Hans to ja", StringComparison.Ordinal), "target language prompt");
-    Assert(!systemContent.Contains("AAVE", StringComparison.Ordinal), "non-English style omitted");
+    Assert(!systemContent.Contains("Black American", StringComparison.Ordinal), "non-English style omitted");
     var userContent = requestDocument.RootElement
         .GetProperty("messages")[1]
         .GetProperty("content")
@@ -214,7 +215,7 @@ static Task CheckInterfaceLabels()
         TranslationScene.SocialMedia,
         EnglishStyle.BlackAmerican));
     Assert(prompt.Contains("not a slang quota", StringComparison.Ordinal), "black american is not a slang quota");
-    Assert(!prompt.Contains("finna", StringComparison.Ordinal), "black american must not force slang");
+    Assert(!prompt.Contains("street", StringComparison.Ordinal), "black american must not be defined as street speech");
     var chinesePrompt = TranslationPromptBuilder.SystemPrompt(new TextTranslationRequest(
         "Hello",
         null,
@@ -224,6 +225,124 @@ static Task CheckInterfaceLabels()
     Assert(
         chinesePrompt.Contains("Detect the source language and translate to zh-Hans", StringComparison.Ordinal),
         "Chinese target detects source language");
+    return Task.CompletedTask;
+}
+
+// These checks validate prompt contracts, not model output or native-speaker quality.
+static Task CheckEnglishStyleContract()
+{
+    var styleMarkers = new Dictionary<EnglishStyle, string>
+    {
+        [EnglishStyle.Automatic] = "Use neutral, contemporary native English",
+        [EnglishStyle.StandardAmerican] = "Use contemporary standard American English",
+        [EnglishStyle.WestCoast] = "Use relaxed contemporary American conversational English",
+        [EnglishStyle.BlackAmerican] = "The user chose contemporary Black American conversational English",
+        [EnglishStyle.British] = "Use natural contemporary British English"
+    };
+    Assert(styleMarkers.Count == Enum.GetValues<EnglishStyle>().Length, "all styles covered");
+    string[] meaningRules =
+    [
+        "Judge the whole utterance by idiom, rhythm, register, and emotional effect",
+        "Preserve facts, referents, time, habituality, negation, certainty, commitments, relationships, and communicative intent.",
+        "Reshape syntax, word order, sentence boundaries, grammatical tense",
+        "An idiomatic or colloquial equivalent does not need a matching word in the source.",
+        "Plain sentences can be plain; expressive sentences should keep their personality.",
+        "Preserve profanity already present in the source with equivalent force and target.",
+        "New profanity is allowed only where the selected voice permits it.",
+        "Do not invent slurs, threats, or personal attacks.",
+        "Use punctuation natural to English."
+    ];
+    const string profanityPermission = "you may add idiomatic profanity even when the source has no literal swear word";
+    string[] blackAmericanConstraints =
+    [
+        "not a slang quota",
+        "not synonymous with slang or profanity",
+        "Authentic dialect grammar is valid English, not an error to automatically standardise away",
+        "habitual forms express recurring behaviour, not an action happening only now",
+        "strong profanity reserved for unmistakably intense anger or excitement",
+        "Do not add profanity to business, faithful, factual or numeric statements, grief, distress, or apologies",
+        "Keep situational frustration aimed at the situation, not a new personal target"
+    ];
+    var otherStyleRules = new Dictionary<EnglishStyle, string[]>
+    {
+        [EnglishStyle.Automatic] =
+        [
+            "warm stays warm, blunt stays blunt, playful stays playful",
+            "widely understood wording and a consistent variety",
+            "Natural does not mean formal, bland, or stripped of personality"
+        ],
+        [EnglishStyle.StandardAmerican] =
+        [
+            "consistent US spelling and vocabulary",
+            "Everyday contractions, phrasal verbs, conversational idioms, and natural short replies belong here",
+            "Prefer conventional written forms, with the source's personality intact"
+        ],
+        [EnglishStyle.WestCoast] =
+        [
+            "rhythm of a real text message",
+            "they are options, not a checklist",
+            "Casual does not mean less precise about plans, duties, uncertainty, or promises"
+        ],
+        [EnglishStyle.British] =
+        [
+            "consistent UK spelling, vocabulary, and conversational grammar",
+            "they are neither required nor forbidden",
+            "British does not automatically mean posh, reserved, more polite, or less enthusiastic"
+        ]
+    };
+    foreach (var scene in Enum.GetValues<TranslationScene>())
+    {
+        var styleEnabled = scene != TranslationScene.Business && scene != TranslationScene.Faithful;
+        foreach (var style in Enum.GetValues<EnglishStyle>())
+        {
+            var request = new TextTranslationRequest(
+                "今天下午3点开会。", null, TranslationLanguage.English, scene, style);
+            var prompt = TranslationPromptBuilder.SystemPrompt(request);
+            foreach (var rule in meaningRules)
+                Assert(prompt.Contains(rule, StringComparison.Ordinal), $"meaning rule: {scene}/{style}/{rule}");
+            foreach (var (candidate, marker) in styleMarkers)
+                Assert(prompt.Contains(marker, StringComparison.Ordinal) == (styleEnabled && candidate == style),
+                    $"voice selection: {scene}/{style}/{candidate}");
+            Assert(prompt.Contains(profanityPermission, StringComparison.Ordinal)
+                == (styleEnabled && style == EnglishStyle.BlackAmerican), "added profanity permission scope");
+            if (styleEnabled && style == EnglishStyle.BlackAmerican)
+            {
+                foreach (var constraint in blackAmericanConstraints)
+                    Assert(prompt.Contains(constraint, StringComparison.Ordinal), $"profanity boundary: {constraint}");
+            }
+            foreach (var (candidate, rules) in otherStyleRules)
+            {
+                foreach (var rule in rules)
+                    Assert(prompt.Contains(rule, StringComparison.Ordinal) == (styleEnabled && style == candidate),
+                        $"style rule isolation: {scene}/{style}/{candidate}/{rule}");
+            }
+            Assert(!prompt.Contains("Do not change tense", StringComparison.Ordinal), "do not freeze grammatical tense");
+            Assert(!prompt.Contains("Do not add slang or profanity unless", StringComparison.Ordinal),
+                "natural colloquial equivalents need no word-for-word permission");
+            if (scene == TranslationScene.Automatic)
+            {
+                Assert(prompt.Contains("ignore conversational voice and added-profanity permissions", StringComparison.Ordinal),
+                    "inferred business/wording-sensitive scene overrides voice");
+                Assert(prompt.Contains("Ordinary factual text can retain the selected variety's natural vocabulary and spelling", StringComparison.Ordinal),
+                    "ordinary facts retain natural regional vocabulary");
+                Assert(prompt.Contains("If uncertain, choose neutral natural English", StringComparison.Ordinal),
+                    "ambiguous scene stays neutral");
+            }
+            Assert(prompt.Contains("contextual examples, not mandatory translations", StringComparison.Ordinal),
+                "examples require context");
+            Assert(prompt.Contains("I broke down", StringComparison.Ordinal)
+                && prompt.Contains("That's unreasonable", StringComparison.Ordinal), "distress and complaints are distinct");
+            foreach (var language in Enum.GetValues<TranslationLanguage>().Where(value => value != TranslationLanguage.English))
+            {
+                var nonEnglish = TranslationPromptBuilder.SystemPrompt(request with { TargetLanguage = language });
+                Assert(!nonEnglish.Contains(profanityPermission, StringComparison.Ordinal), "non-English has no profanity permission");
+                Assert(!styleMarkers.Values.Any(marker => nonEnglish.Contains(marker, StringComparison.Ordinal)),
+                    "non-English has no English voice");
+                Assert(!nonEnglish.Contains("An idiomatic or colloquial equivalent", StringComparison.Ordinal),
+                    "non-English has no English expression contract");
+            }
+        }
+    }
     return Task.CompletedTask;
 }
 

@@ -117,7 +117,7 @@ struct InterfaceStrings: Sendable {
         switch style {
         case .automatic: isEnglish ? "Natural" : "自然"
         case .standardAmerican: isEnglish ? "US English" : "美国英语"
-        case .westCoast: isEnglish ? "West Coast" : "轻松美式"
+        case .westCoast: isEnglish ? "Casual US" : "轻松美式"
         case .blackAmerican: isEnglish ? "Black American" : "黑人英语"
         case .british: isEnglish ? "UK English" : "英国英语"
         }

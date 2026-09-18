@@ -12,6 +12,9 @@ internal static class Program
         foreach (var language in new[] { InterfaceLanguage.English, InterfaceLanguage.SimplifiedChinese })
         {
             var host = new SettingsHost(language);
+            Assert(host.Strings.StyleName(EnglishStyle.WestCoast)
+                == (language == InterfaceLanguage.English ? "Casual US" : "轻松美式"),
+                "casual US label must not promise a regional persona");
             // Construct the real form without displaying it or saving credentials.
             using var form = new SettingsForm(host, null);
             var list = Field<ListBox>(form, "_providerList");

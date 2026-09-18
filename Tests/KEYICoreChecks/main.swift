@@ -272,27 +272,25 @@ let localSystemPrompt = TranslationPromptBuilder.localSystemPrompt(for: styledRe
 let localUserPrompt = TranslationPromptBuilder.localUserPrompt(for: styledRequest)
 expect(systemPrompt.contains("public social-media posts and replies"), "提示词应包含社交媒体场景")
 expect(systemPrompt.contains("British English"), "提示词应包含英式英语风格")
-expect(systemPrompt.contains("I literally can't"), "提示词应明确禁止网络用语直译")
+expect(systemPrompt.contains("contextual examples, not mandatory translations"), "多义表达示例必须按上下文理解")
+expect(systemPrompt.contains("I broke down") && systemPrompt.contains("That's unreasonable"), "应区分悲伤和严肃投诉")
 expect(!userPrompt.contains("full_input_context"), "云端请求不得包含未选中的输入框上下文")
 expect(userPrompt.contains("这也太离谱了"), "请求应包含待翻译文本")
 expect(localSystemPrompt.count < systemPrompt.count, "本地模型应使用更紧凑的提示词降低输出延迟")
-expect(localSystemPrompt.contains("social-media register") && localSystemPrompt.contains("British English"), "本地提示词应保留场景和风格")
+expect(localSystemPrompt.contains("public social-media posts and replies") && localSystemPrompt.contains("British English"), "本地提示词应保留场景和风格")
 expect(localUserPrompt.contains("full_input_context") && localUserPrompt.contains("这也太离谱了"), "本地请求应保留正文和本地上下文")
 
-let streetAAVERequest = TextTranslationRequest(
+let expressiveBlackAmericanRequest = TextTranslationRequest(
     sourceText: "兄弟，这也太离谱了",
     scene: .socialMedia,
     englishStyle: .blackAmerican
 )
-let streetAAVEPrompt = TranslationPromptBuilder.systemPrompt(for: streetAAVERequest)
-expect(streetAAVEPrompt.contains("not a slang quota"), "Black American 默认不得变成俚语配额")
-expect(streetAAVEPrompt.contains("If the source is neutral"), "Black American 应对中性原文保持克制")
-expect(streetAAVEPrompt.contains("syntax, rhythm") || streetAAVEPrompt.contains("Cadence"), "Black American 应优先节奏和句法")
-expect(!streetAAVEPrompt.contains("do not fall back to neutral American English"), "Black American 不得强制禁止中性英语")
-expect(!streetAAVEPrompt.contains("at least one or two"), "Black American 不得要求每句塞标记")
-let streetAAVELocalPrompt = TranslationPromptBuilder.localSystemPrompt(for: streetAAVERequest)
-expect(streetAAVELocalPrompt.contains("Cadence over slang"), "本地 Black American 提示词应为自然默认")
-expect(!streetAAVELocalPrompt.contains("finna"), "本地 Black American 不得点名强制俚语")
+let expressiveBlackAmericanPrompt = TranslationPromptBuilder.systemPrompt(for: expressiveBlackAmericanRequest)
+expect(expressiveBlackAmericanPrompt.contains("not a slang quota"), "Black American 默认不得变成俚语配额")
+expect(expressiveBlackAmericanPrompt.contains("a neutral message can be understated without erasing the voice"), "中性原文可以克制，但不应抹掉所选语气")
+expect(expressiveBlackAmericanPrompt.contains("syntax, rhythm"), "Black American 应优先节奏和句法")
+expect(!expressiveBlackAmericanPrompt.contains("street"), "Black American 不应被定义为街头表达")
+expect(!expressiveBlackAmericanPrompt.contains("at least one or two"), "Black American 不得要求每句塞标记")
 
 let japaneseRequest = TextTranslationRequest(
     sourceText: "你好",
@@ -305,7 +303,7 @@ expect(japanesePrompt.contains("zh-Hans to ja"), "非英语提示词应传入目
 expect(japanesePrompt.contains("everyday messages between people"), "非英语提示词应保留全语种场景")
 expect(japanesePrompt.contains("Scene guidance"), "非英语翻译仍应使用场景")
 expect(!japanesePrompt.contains("English voice guidance"), "非英语翻译不得注入英语风格段落")
-expect(!japanesePrompt.contains("AAVE"), "非英语翻译不得注入英语风格")
+expect(!japanesePrompt.contains("Black American"), "非英语翻译不得注入英语风格")
 
 let businessRequest = TextTranslationRequest(
     sourceText: "请确认订单数量为 1200 件，单价 3.5 美元。",
@@ -316,12 +314,128 @@ let businessPrompt = TranslationPromptBuilder.systemPrompt(for: businessRequest)
 expect(businessPrompt.contains("business or trade register"), "商务场景应使用商务/贸易语域")
 expect(businessPrompt.contains("exact meaning"), "商务场景应优先准确表达")
 expect(businessPrompt.contains("commercial misunderstanding"), "商务场景应避免商业误解")
-expect(!businessPrompt.contains("AAVE"), "商务场景不得注入街头风格")
-expect(!businessPrompt.contains("finna"), "商务场景不得注入街头俚语")
+expect(!businessPrompt.contains("Black American"), "商务场景不得注入黑人美式风格")
 
 let businessLocalPrompt = TranslationPromptBuilder.localSystemPrompt(for: businessRequest)
-expect(businessLocalPrompt.contains("exact meaning first"), "本地商务提示词应优先准确表达")
-expect(!businessLocalPrompt.contains("AAVE"), "本地商务提示词不得注入街头风格")
+expect(businessLocalPrompt.contains("Prioritise exact meaning over style"), "本地商务提示词应优先准确表达")
+expect(!businessLocalPrompt.contains("Black American"), "本地商务提示词不得注入黑人美式风格")
+
+// These checks validate prompt contracts, not model output or native-speaker quality.
+let englishStyleMarkers: [(EnglishStyle, String)] = [
+    (.automatic, "Use neutral, contemporary native English"),
+    (.standardAmerican, "Use contemporary standard American English"),
+    (.westCoast, "Use relaxed contemporary American conversational English"),
+    (.blackAmerican, "The user chose contemporary Black American conversational English"),
+    (.british, "Use natural contemporary British English")
+]
+expect(englishStyleMarkers.count == EnglishStyle.allCases.count, "风格测试应覆盖全部选项")
+let sharedMeaningRules = [
+    "Judge the whole utterance by idiom, rhythm, register, and emotional effect",
+    "Preserve facts, referents, time, habituality, negation, certainty, commitments, relationships, and communicative intent.",
+    "Reshape syntax, word order, sentence boundaries, grammatical tense",
+    "An idiomatic or colloquial equivalent does not need a matching word in the source.",
+    "Plain sentences can be plain; expressive sentences should keep their personality.",
+    "Preserve profanity already present in the source with equivalent force and target.",
+    "New profanity is allowed only where the selected voice permits it.",
+    "Do not invent slurs, threats, or personal attacks.",
+    "Use punctuation natural to English."
+]
+let addedProfanityPermission = "you may add idiomatic profanity even when the source has no literal swear word"
+let blackAmericanConstraints = [
+    "not a slang quota",
+    "not synonymous with slang or profanity",
+    "Authentic dialect grammar is valid English, not an error to automatically standardise away",
+    "habitual forms express recurring behaviour, not an action happening only now",
+    "strong profanity reserved for unmistakably intense anger or excitement",
+    "Do not add profanity to business, faithful, factual or numeric statements, grief, distress, or apologies",
+    "Keep situational frustration aimed at the situation, not a new personal target"
+]
+let otherEnglishStyleRules: [EnglishStyle: [String]] = [
+    .automatic: [
+        "warm stays warm, blunt stays blunt, playful stays playful",
+        "widely understood wording and a consistent variety",
+        "Natural does not mean formal, bland, or stripped of personality"
+    ],
+    .standardAmerican: [
+        "consistent US spelling and vocabulary",
+        "Everyday contractions, phrasal verbs, conversational idioms, and natural short replies belong here",
+        "Prefer conventional written forms, with the source's personality intact"
+    ],
+    .westCoast: [
+        "rhythm of a real text message",
+        "they are options, not a checklist",
+        "Casual does not mean less precise about plans, duties, uncertainty, or promises"
+    ],
+    .british: [
+        "consistent UK spelling, vocabulary, and conversational grammar",
+        "they are neither required nor forbidden",
+        "British does not automatically mean posh, reserved, more polite, or less enthusiastic"
+    ]
+]
+for scene in TranslationScene.allCases {
+    let styleEnabled = scene != .business && scene != .faithful
+    for (style, _) in englishStyleMarkers {
+        let request = TextTranslationRequest(
+            sourceText: "今天下午3点开会。",
+            scene: scene,
+            englishStyle: style
+        )
+        let cloud = TranslationPromptBuilder.systemPrompt(for: request)
+        let local = TranslationPromptBuilder.localSystemPrompt(for: request)
+        expect(local.count < cloud.count, "本地包装仍应比云端精简")
+        for prompt in [cloud, local] {
+            for rule in sharedMeaningRules {
+                expect(prompt.contains(rule), "云端和本地都应保留共同语义约束: \(rule)")
+            }
+            for (candidate, marker) in englishStyleMarkers {
+                expect(
+                    prompt.contains(marker) == (styleEnabled && candidate == style),
+                    "风格段启停不正确: \(scene)/\(style)/\(candidate)"
+                )
+            }
+            expect(
+                prompt.contains(addedProfanityPermission) == (styleEnabled && style == .blackAmerican),
+                "额外脏话许可只属于启用的黑人美式风格"
+            )
+            if styleEnabled && style == .blackAmerican {
+                for constraint in blackAmericanConstraints {
+                    expect(prompt.contains(constraint), "脏话许可必须保留边界: \(constraint)")
+                }
+            }
+            for (candidate, rules) in otherEnglishStyleRules {
+                for rule in rules {
+                    expect(
+                        prompt.contains(rule) == (styleEnabled && style == candidate),
+                        "风格规则不得遗漏或串档: \(scene)/\(style)/\(candidate)/\(rule)"
+                    )
+                }
+            }
+            expect(!prompt.contains("Do not change tense"), "语义保真不得冻结英语时态形式")
+            expect(!prompt.contains("Do not add slang or profanity unless"), "自然口语不需要原文逐词许可")
+            if scene == .automatic {
+                expect(prompt.contains("ignore conversational voice and added-profanity permissions"), "自动商务和措辞敏感场景必须覆盖口语许可")
+                expect(prompt.contains("Ordinary factual text can retain the selected variety's natural vocabulary and spelling"), "普通事实不能一律抹掉英美用词差异")
+                expect(prompt.contains("If uncertain, choose neutral natural English"), "不确定时不得默认强行聊天化")
+            }
+        }
+        for language in TranslationLanguage.allCases where language != .english {
+            let nonEnglish = TextTranslationRequest(
+                sourceText: "你好",
+                targetLanguage: language,
+                scene: scene,
+                englishStyle: style
+            )
+            for prompt in [
+                TranslationPromptBuilder.systemPrompt(for: nonEnglish),
+                TranslationPromptBuilder.localSystemPrompt(for: nonEnglish)
+            ] {
+                expect(!prompt.contains(addedProfanityPermission), "非英语不得获得额外脏话许可")
+                expect(!englishStyleMarkers.contains { prompt.contains($0.1) }, "非英语不得注入任何英语风格段")
+                expect(!prompt.contains("An idiomatic or colloquial equivalent"), "非英语不得注入英语表达合同")
+            }
+        }
+    }
+}
 
 
 // MARK: - OpenAI 兼容提供方 HTTP 语义（URLProtocol 桩）
