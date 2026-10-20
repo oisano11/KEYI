@@ -35,7 +35,7 @@ Translation（系统翻译）、Security（Keychain、代码签名）。
 - **反馈**（`TranslationIslandController`、`MenuBarContent`）：翻译中的浮层状态与菜单栏菜单；
   菜单里还有终端恢复命令的复制／丢弃入口。
 - **设置与凭据**（`SettingsWindow`、`TranslationSettingsStore`、`CredentialStore`、
-  `InterfaceLocalization`）：四个分页（翻译、服务、快捷键、通用）与中英日界面文案；偏好存
+  `InterfaceLocalization`）：四个分页（翻译、服务、快捷键、通用）与中英两套界面文案；偏好存
   `UserDefaults`，密钥存 Keychain，两者分开。
 - **写回**：见 [keyi-writeback](keyi-writeback)。
 - **本地模型**：见 [keyi-local-model](keyi-local-model)。
