@@ -1,3 +1,15 @@
+---
+id: keyi-english-style
+type: submodule-design
+title: 英文风格契约与可接受性验收
+status: active
+parent: keyi-architecture
+tags:
+  - behavior
+  - prompt
+  - acceptance
+---
+
 # English Style Acceptance
 
 The translations in the Cases table are authored candidates, not captured KEYI

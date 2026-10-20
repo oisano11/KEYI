@@ -11,11 +11,15 @@ let package = Package(
         .executable(name: "KEYI", targets: ["KEYI"])
     ],
     targets: [
-        .target(name: "KEYICore"),
+        .target(
+            name: "KEYICore",
+            exclude: ["SPEC.md"]
+        ),
         .target(
             name: "KEYIUI",
             dependencies: ["KEYICore"],
             path: "Sources/KEYIUI",
+            exclude: ["SPEC.md", "Writeback-SPEC.md", "LocalModel-SPEC.md"],
             swiftSettings: [
                 // 仅 debug 构建开启测试性导出，供 KEYIAppChecks 以 @testable
                 // 导入；应用包不会被其他包作为依赖引用，unsafeFlags 无副作用。
