@@ -2,7 +2,7 @@
 id: keyi-local-model
 type: submodule-design
 title: 本地模型 — 只信任本机已签名的 LM Studio
-status: draft
+status: active
 parent: keyi-ui
 tags:
   - module

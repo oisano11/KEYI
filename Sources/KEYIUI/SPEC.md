@@ -2,7 +2,7 @@
 id: keyi-ui
 type: module-design
 title: KEYIUI — macOS 应用层与翻译编排
-status: draft
+status: active
 parent: keyi-architecture
 tags:
   - module

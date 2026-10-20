@@ -2,7 +2,7 @@
 id: keyi-windows-app
 type: module-design
 title: KEYI.Windows — Windows 托盘应用与 UIA 写回
-status: draft
+status: active
 parent: keyi-architecture
 tags:
   - module

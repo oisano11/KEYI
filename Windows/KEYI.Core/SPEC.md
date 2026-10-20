@@ -2,7 +2,7 @@
 id: keyi-windows-core
 type: module-design
 title: KEYI.Core — Windows 侧的纯逻辑核心
-status: draft
+status: active
 parent: keyi-architecture
 tags:
   - module

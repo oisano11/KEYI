@@ -2,7 +2,7 @@
 id: keyi
 type: goal-and-requirements
 title: KEYI 可译 — 输入框内的原地翻译
-status: draft
+status: active
 tags:
   - product
   - desktop

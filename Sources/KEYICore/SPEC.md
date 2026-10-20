@@ -2,7 +2,7 @@
 id: keyi-core
 type: module-design
 title: KEYICore — 跨平台无关的翻译核心
-status: draft
+status: active
 parent: keyi-architecture
 tags:
   - module

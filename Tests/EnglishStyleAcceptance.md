@@ -2,7 +2,7 @@
 id: keyi-english-style
 type: submodule-design
 title: 英文风格契约与可接受性验收
-status: draft
+status: active
 parent: keyi-architecture
 tags:
   - behavior

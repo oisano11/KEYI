@@ -2,7 +2,7 @@
 id: keyi-writeback
 type: submodule-design
 title: 写回 — 辅助功能快照与安全替换
-status: draft
+status: active
 parent: keyi-ui
 tags:
   - module

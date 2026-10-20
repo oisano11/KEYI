@@ -2,7 +2,7 @@
 id: keyi-architecture
 type: architecture-design
 title: KEYI 的架构拓扑与跨平台不变量
-status: draft
+status: active
 parent: keyi
 tags:
   - architecture
