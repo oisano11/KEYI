@@ -7,6 +7,8 @@ parent: keyi-architecture
 tags:
   - module
   - macos
+references:
+  - keyi-english-style
 ---
 
 # KEYICore — 跨平台无关的翻译核心

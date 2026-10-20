@@ -7,6 +7,8 @@ parent: keyi-architecture
 tags:
   - module
   - windows
+references:
+  - keyi-english-style
 ---
 
 # KEYI.Core — Windows 侧的纯逻辑核心
