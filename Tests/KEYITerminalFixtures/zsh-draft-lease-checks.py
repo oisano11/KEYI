@@ -124,6 +124,18 @@ def write_lease(capture, ttl_us=2_500_000):
     return lease_id, deadline, lease_path, session_dir / f"reply-{lease_id}.fifo"
 
 
+def capture_eventually(shell, timeout=3.0):
+    """Capture once ZLE is free again; the last failure is reported if it never is."""
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            return shell.capture()
+        except AssertionError:
+            if time.monotonic() >= deadline:
+                raise
+            drain(shell.fd, 0.2)
+
+
 def commit_process(shell, capture, lease, text):
     lease_id, deadline, _, _ = lease
     request = dict(
@@ -281,7 +293,10 @@ def run_expired_lease(root):
         result = commit_process(shell, capture, lease, "expired translation")
         set_delay(root, None)
         check(result.returncode != 0, "expired lease must be rejected while the ACK reader is still open")
-        check(shell.capture()["buffer"] == capture["buffer"], "expired lease must preserve the original buffer")
+        # Let zsh finish the rejected commit before asking again (slow CI runners
+        # answered the next capture while ZLE was still busy), as the dead-reader case does.
+        drain(shell.fd, 1.0)
+        check(capture_eventually(shell)["buffer"] == capture["buffer"], "expired lease must preserve the original buffer")
     finally:
         close_shell(shell, lease)
 
