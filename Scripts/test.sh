@@ -19,5 +19,15 @@ fi
 
 echo "发布版本一致：$EXPECTED_VERSION"
 swift run KEYICoreChecks
+swift run KEYITerminalChecks
 swift run KEYIAppChecks
 swift run KEYIRegressionChecks
+swift run KEYIAppleTranslationProbe --offline-checks
+swift build --product KEYITerminal
+TERMINAL_BIN_DIR="$(swift build --show-bin-path)"
+zsh -n Scripts/Terminal/keyi.zsh
+zsh -n Scripts/Terminal/keyi-zsh-draft.zsh
+bash -n Scripts/Terminal/keyi.bash
+zsh Tests/KEYITerminalFixtures/zsh-checks.zsh
+zsh Tests/KEYITerminalFixtures/launcher-checks.zsh "$TERMINAL_BIN_DIR/KEYITerminal"
+PYTHONDONTWRITEBYTECODE=1 python3 Tests/KEYITerminalFixtures/zsh-draft-lease-checks.py "$TERMINAL_BIN_DIR/KEYITerminal"

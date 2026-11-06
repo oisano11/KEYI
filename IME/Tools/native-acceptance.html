@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KEYI IME 01 原生验收</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f5f6f8;
+      --card: #fff;
+      --text: #1f2328;
+      --muted: #656d76;
+      --line: #d0d7de;
+      --accent: #0969da;
+      --pass: #1a7f37;
+      --fail: #cf222e;
+      --pending: #9a6700;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #161b22; --card: #21262d; --text: #e6edf3; --muted: #8b949e; --line: #30363d; }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0 auto;
+      padding: 28px 20px 72px;
+      max-width: 1100px;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+    }
+    h1, h2, h3 { line-height: 1.2; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    h2 { margin: 28px 0 12px; font-size: 21px; }
+    h3 { margin: 0 0 8px; font-size: 18px; }
+    p { margin: 8px 0; }
+    code, kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    kbd {
+      padding: 1px 5px;
+      border: 1px solid var(--line);
+      border-bottom-width: 2px;
+      border-radius: 4px;
+      background: var(--bg);
+    }
+    .muted { color: var(--muted); }
+    .notice {
+      margin: 16px 0;
+      padding: 12px 14px;
+      border-left: 4px solid var(--accent);
+      background: color-mix(in srgb, var(--accent) 9%, var(--card));
+    }
+    .toolbar, .step-toolbar, .manual-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      margin: 16px -20px;
+      padding: 10px 20px;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--bg) 92%, transparent);
+      backdrop-filter: blur(8px);
+    }
+    button, select, input {
+      min-height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--card);
+      color: var(--text);
+      font: inherit;
+    }
+    button { padding: 5px 11px; cursor: pointer; }
+    button:hover { border-color: var(--accent); }
+    input, select { padding: 4px 8px; }
+    .current {
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--card);
+    }
+    .current strong { color: var(--accent); }
+    #eventSummary {
+      max-height: 190px;
+      overflow: auto;
+      margin: 10px 0 0;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--muted);
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: pre-wrap;
+    }
+    .step {
+      margin: 16px 0;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--card);
+    }
+    .step.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .step-head {
+      display: flex;
+      gap: 12px;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+    .hint {
+      margin: 8px 0 12px;
+      color: var(--muted);
+    }
+    textarea, [contenteditable="true"] {
+      display: block;
+      width: 100%;
+      min-height: 86px;
+      padding: 11px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+      font: 20px/1.55 system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+      resize: vertical;
+    }
+    [contenteditable="true"] { outline: none; }
+    [contenteditable="true"]:focus, textarea:focus, input:focus, select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+    }
+    .single-line { min-height: 38px; font-size: 18px; }
+    .status {
+      display: inline-block;
+      min-width: 58px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 650;
+      text-align: center;
+      background: color-mix(in srgb, var(--pending) 14%, var(--card));
+      color: var(--pending);
+    }
+    .status.pass { background: color-mix(in srgb, var(--pass) 14%, var(--card)); color: var(--pass); }
+    .status.fail { background: color-mix(in srgb, var(--fail) 14%, var(--card)); color: var(--fail); }
+    .summary { margin: 10px 0 0; color: var(--muted); font-size: 13px; }
+    .manual-controls { margin-top: 10px; }
+    .manual-controls label { color: var(--muted); font-size: 14px; }
+    .step-toolbar { margin-top: 11px; }
+    .step-toolbar .event-count { color: var(--muted); font-size: 13px; }
+    .test-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    #jsonStatus { color: var(--muted); font-size: 13px; }
+    footer { margin-top: 26px; color: var(--muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>KEYI IME 01 · 原生验收</h1>
+    <p>离线观察页。请先在 macOS 输入法菜单选择 <strong>KEYI 拼音</strong>，再只用实体键盘完成下列步骤。</p>
+    <div class="notice">
+      本页只被动监听 <code>compositionstart/update/end</code>、<code>beforeinput</code>、
+      <code>input</code>、<code>keydown</code> 和本地表单提交。它不会注入事件、自动填充、
+      合成中文、粘贴或发送网络请求。没有组合事件证据时，检查器不会自动给出 PASS；
+      浏览器结论只覆盖网页原生输入路由，不能替代 TextEdit 的系统级实体键盘回归。
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <button id="copyJson" type="button">复制 JSON 结果</button>
+    <button id="downloadJson" type="button">下载 JSON 结果</button>
+    <button id="resetRecords" type="button">重置本页记录</button>
+    <span id="jsonStatus" role="status"></span>
+  </div>
+
+  <section class="current" aria-live="polite">
+    当前步骤：<strong id="currentStep">1 · 基础组合</strong>
+    <span class="muted">　按卡片提示操作；每步完成后点“检查当前步骤”。</span>
+    <pre id="eventSummary">尚未收到事件。</pre>
+  </section>
+
+  <main id="steps">
+    <article class="step active" data-step="route">
+      <div class="step-head"><h3>1 · 基础组合与空格上屏</h3><span class="status" id="status-route">待观察</span></div>
+      <p class="hint">清空文本框，输入 <kbd>nihao</kbd>。先观察 marked text/候选，再按 <kbd>Space</kbd>；预期出现“你好”。</p>
+      <textarea id="routeBox" data-step-target="route" spellcheck="false" aria-label="基础组合测试框"></textarea>
+      <div class="step-toolbar"><button type="button" data-check="route">检查当前步骤</button><button type="button" data-reset="route">重置记录</button><span class="event-count" id="count-route"></span></div>
+      <p class="summary" id="summary-route">等待实体键盘事件。</p>
+    </article>
+
+    <article class="step" data-step="candidate">
+      <div class="step-head"><h3>2 · 数字选择实际第二候选（人工项）</h3><span class="status" id="status-candidate">待观察</span></div>
+      <p class="hint">清空后输入 <kbd>shijie</kbd>，记下候选窗实际显示的第 2 项，再按 <kbd>2</kbd>。将你看到的第 2 项手动填入下框，并确认文本框结果包含它。</p>
+      <textarea id="candidateBox" data-step-target="candidate" spellcheck="false" aria-label="数字候选测试框"></textarea>
+      <div class="manual-controls"><label for="candidateObserved">实际第 2 候选：</label><input id="candidateObserved" autocomplete="off" aria-label="实际第二候选"></div>
+      <div class="step-toolbar"><button type="button" data-check="candidate">检查当前步骤</button><button type="button" data-reset="candidate">重置记录</button><span class="event-count" id="count-candidate"></span></div>
+      <p class="summary" id="summary-candidate">候选显示和屏幕内容必须由用户观察；本页不截图或猜测候选。</p>
+    </article>
+
+    <article class="step" data-step="backspace">
+      <div class="step-head"><h3>3 · 退格清空</h3><span class="status" id="status-backspace">待观察</span></div>
+      <p class="hint">清空后输入 <kbd>ni</kbd>，按两次 <kbd>Backspace</kbd>。预期 marked text、候选和文本框均为空。</p>
+      <textarea id="backspaceBox" data-step-target="backspace" spellcheck="false" aria-label="退格测试框"></textarea>
+      <div class="step-toolbar"><button type="button" data-check="backspace">检查当前步骤</button><button type="button" data-reset="backspace">重置记录</button><span class="event-count" id="count-backspace"></span></div>
+      <p class="summary" id="summary-backspace">等待实体键盘事件。</p>
+    </article>
+
+    <article class="step" data-step="escape">
+      <div class="step-head"><h3>4 · Escape 保留前文</h3><span class="status" id="status-escape">待观察</span></div>
+      <p class="hint">先输入普通前文 <kbd>abc</kbd> 并按一次组合期间的 <kbd>Return</kbd> 使其落地，再输入 <kbd>nihao</kbd>，按 <kbd>Escape</kbd>。预期只保留前文。</p>
+      <textarea id="escapeBox" data-step-target="escape" spellcheck="false" aria-label="Escape 测试框"></textarea>
+      <div class="step-toolbar"><button type="button" data-check="escape">检查当前步骤</button><button type="button" data-reset="escape">重置记录</button><span class="event-count" id="count-escape"></span></div>
+      <p class="summary" id="summary-escape">检查器会确认看到了 nihao 和 Escape，且结果中没有残留 nihao。</p>
+    </article>
+
+    <article class="step" data-step="middle">
+      <div class="step-head"><h3>5 · 中间编辑</h3><span class="status" id="status-middle">待观察</span></div>
+      <p class="hint">清空后输入 <kbd>nihao</kbd>，按 <kbd>←</kbd> 两次、<kbd>→</kbd> 一次、输入 <kbd>x</kbd>，再按 <kbd>Return</kbd>。预期文本为 <code>nixhao</code>。</p>
+      <textarea id="middleBox" data-step-target="middle" spellcheck="false" aria-label="中间编辑测试框"></textarea>
+      <div class="step-toolbar"><button type="button" data-check="middle">检查当前步骤</button><button type="button" data-reset="middle">重置记录</button><span class="event-count" id="count-middle"></span></div>
+      <p class="summary" id="summary-middle">检查器要求组合事件证据、方向键和 Return。</p>
+    </article>
+
+    <article class="step" data-step="forward">
+      <div class="step-head"><h3>6 · Forward Delete（人工项）</h3><span class="status" id="status-forward">待观察</span></div>
+      <p class="hint">清空后输入 <kbd>nihao</kbd>，确认光标在末尾，按实体键盘的 Forward Delete（通常为 <kbd>Fn</kbd>+<kbd>Delete</kbd>）。它不应像退格一样变成 <code>niha</code>。</p>
+      <textarea id="forwardBox" data-step-target="forward" spellcheck="false" aria-label="Forward Delete 测试框"></textarea>
+      <div class="manual-controls"><label for="forwardVerdict">人工观察：</label><select id="forwardVerdict"><option value="pending">待观察</option><option value="pass">通过：未退格，组合仍一致</option><option value="fail">失败：变成退格或状态残留</option></select><button type="button" data-manual="forward">记录人工判定</button></div>
+      <div class="step-toolbar"><button type="button" data-reset="forward">重置记录</button><span class="event-count" id="count-forward"></span></div>
+      <p class="summary" id="summary-forward">Forward Delete 的最终组合状态交由用户观察；本页不会伪造 PASS。</p>
+    </article>
+
+    <article class="step" data-step="return">
+      <div class="step-head"><h3>7 · 组合 Return 与空闲 Return</h3><span class="status" id="status-return">待观察</span></div>
+      <p class="hint">清空后输入 <kbd>nihao</kbd>，按一次 <kbd>Return</kbd>，再按一次 <kbd>Return</kbd>。第一次应提交原始 <code>nihao</code> 且不换行；第二次才插入一个换行。</p>
+      <textarea id="returnBox" data-step-target="return" spellcheck="false" aria-label="Return 测试框"></textarea>
+      <div class="step-toolbar"><button type="button" data-check="return">检查当前步骤</button><button type="button" data-reset="return">重置记录</button><span class="event-count" id="count-return"></span></div>
+      <p class="summary" id="summary-return">检查器会记录第一次 Return 后的文本快照。</p>
+    </article>
+
+    <article class="step" data-step="editable">
+      <div class="step-head"><h3>8 · contenteditable 网页原生路由</h3><span class="status" id="status-editable">待观察</span></div>
+      <p class="hint">在可编辑区域输入 <kbd>nihao</kbd> 再按 <kbd>Space</kbd>。预期看到组合事件并出现中文；这只验证当前浏览器编辑区域。</p>
+      <div id="editableBox" data-step-target="editable" contenteditable="true" role="textbox" aria-label="可编辑区域"></div>
+      <div class="step-toolbar"><button type="button" data-check="editable">检查当前步骤</button><button type="button" data-reset="editable">重置记录</button><span class="event-count" id="count-editable"></span></div>
+      <p class="summary" id="summary-editable">浏览器的结果不能替代 TextEdit 的原生验收。</p>
+    </article>
+
+    <article class="step" data-step="form">
+      <div class="step-head"><h3>9 · 单行表单 Return</h3><span class="status" id="status-form">待观察</span></div>
+      <p class="hint">输入框中输入 <kbd>nihao</kbd>。第一次 <kbd>Return</kbd> 应提交原始拼音但不触发表单；第二次 <kbd>Return</kbd> 才使本地提交计数加 1。</p>
+      <form id="imeForm" class="test-form">
+        <input id="formBox" data-step-target="form" class="single-line" autocomplete="off" aria-label="单行表单输入框">
+        <button type="submit">本地提交按钮</button>
+      </form>
+      <p>本地提交次数：<strong id="submitCount">0</strong></p>
+      <div class="step-toolbar"><button type="button" data-check="form">检查当前步骤</button><button type="button" data-reset="form">重置记录</button><span class="event-count" id="count-form"></span></div>
+      <p class="summary" id="summary-form">提交事件只在本页计数，不发送网络请求。</p>
+    </article>
+  </main>
+
+  <footer>
+    每步的“重置记录”只清理本页事件和状态，不会清空测试框；请按步骤自行清空文本框。
+    完成后可复制或下载 JSON，把结果交给验收者复核。
+  </footer>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const stepIds = ["route", "candidate", "backspace", "escape", "middle", "forward", "return", "editable", "form"];
+      const stepTitles = {
+        route: "1 · 基础组合",
+        candidate: "2 · 数字候选",
+        backspace: "3 · 退格清空",
+        escape: "4 · Escape",
+        middle: "5 · 中间编辑",
+        forward: "6 · Forward Delete",
+        return: "7 · Return",
+        editable: "8 · contenteditable",
+        form: "9 · 单行表单"
+      };
+      const state = {};
+
+      function newState() {
+        return {
+          status: "待观察",
+          events: [],
+          compositionstart: 0,
+          compositionupdate: 0,
+          compositionend: 0,
+          beforeinput: 0,
+          input: 0,
+          keydown: 0,
+          keySequence: "",
+          spaceCount: 0,
+          returnCount: 0,
+          backspaceCount: 0,
+          forwardDeleteCount: 0,
+          escapeCount: 0,
+          firstReturnValue: null,
+          submitCount: 0,
+          firstReturnSubmitCount: null,
+          manualVerdict: "pending",
+          note: ""
+        };
+      }
+      for (const id of stepIds) state[id] = newState();
+
+      const $ = (id) => document.getElementById(id);
+      const targetFor = (id) => document.querySelector(`[data-step-target="${id}"]`);
+
+      function readValue(element) {
+        if (!element) return "";
+        return element.isContentEditable ? element.innerText : element.value;
+      }
+
+      function hasCompositionEvidence(s) {
+        return s.compositionstart > 0 && (s.compositionupdate > 0 || s.compositionend > 0);
+      }
+
+      function eventLine(name, event) {
+        const time = new Date().toLocaleTimeString();
+        if (name === "keydown") {
+          return `${time} keydown key=${event.key} code=${event.code} composing=${Boolean(event.isComposing)}`;
+        }
+        if (name === "beforeinput" || name === "input") {
+          return `${time} ${name} type=${event.inputType || ""} data=${event.data || ""}`;
+        }
+        return `${time} ${name} data=${event.data || ""}`;
+      }
+
+      function record(id, name, event, element) {
+        const s = state[id];
+        s.events.push(eventLine(name, event));
+        if (s.events.length > 120) s.events.shift();
+        s[name] = (s[name] || 0) + 1;
+
+        if (name === "keydown") {
+          if (event.key === " ") s.spaceCount += 1;
+          if (event.key === "Enter") {
+            s.returnCount += 1;
+            if (s.returnCount === 1) {
+              window.setTimeout(() => {
+                if (s.firstReturnValue === null) s.firstReturnValue = readValue(element);
+                if (id === "form" && s.firstReturnSubmitCount === null) s.firstReturnSubmitCount = s.submitCount;
+                render(id);
+              }, 0);
+            }
+          }
+          if (event.key === "Backspace") s.backspaceCount += 1;
+          if (event.key === "Delete" || event.code === "ForwardDelete") s.forwardDeleteCount += 1;
+          if (event.key === "Escape") s.escapeCount += 1;
+          if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+            s.keySequence += event.key.toLowerCase();
+          }
+        }
+        if (name === "input") s.lastValue = readValue(element);
+        render(id);
+      }
+
+      function attachStep(id) {
+        const element = targetFor(id);
+        if (!element) return;
+        const observed = ["compositionstart", "compositionupdate", "compositionend", "beforeinput", "input", "keydown"];
+        for (const name of observed) {
+          // Passive listeners make this page observational: none of these handlers
+          // can cancel or synthesize the user's physical key event.
+          element.addEventListener(name, (event) => record(id, name, event, element), { passive: true });
+        }
+        element.addEventListener("focus", () => setCurrent(id), { passive: true });
+      }
+      stepIds.forEach(attachStep);
+
+      function setCurrent(id) {
+        document.querySelectorAll(".step").forEach((card) => card.classList.toggle("active", card.dataset.step === id));
+        $("currentStep").textContent = stepTitles[id];
+        renderEventSummary(id);
+      }
+
+      function eventSummary(s) {
+        const evidence = hasCompositionEvidence(s) ? "有 composition 证据" : "无 composition 证据（不能自动 PASS）";
+        return `${evidence}；composition ${s.compositionstart}/${s.compositionupdate}/${s.compositionend}；beforeinput/input ${s.beforeinput}/${s.input}；keydown ${s.keydown}；Return ${s.returnCount}；Space ${s.spaceCount}；Backspace ${s.backspaceCount}；ForwardDelete ${s.forwardDeleteCount}；Escape ${s.escapeCount}`;
+      }
+
+      function renderEventSummary(id) {
+        const s = state[id];
+        $("eventSummary").textContent = s.events.length ? s.events.slice(-24).join("\n") : "尚未收到事件。";
+      }
+
+      function render(id) {
+        const s = state[id];
+        const badge = $("status-" + id);
+        badge.textContent = s.status;
+        badge.className = "status" + (s.status === "PASS" ? " pass" : s.status === "FAIL" ? " fail" : "");
+        $("count-" + id).textContent = eventSummary(s);
+        $("summary-" + id).textContent = s.note || "等待实体键盘事件。";
+        if (id === "form") $("submitCount").textContent = String(s.submitCount);
+        if (document.querySelector(`.step.active[data-step="${id}"]`)) renderEventSummary(id);
+      }
+
+      function result(id, status, note) {
+        state[id].status = status;
+        state[id].note = note;
+        render(id);
+      }
+
+      function requireEvidence(id) {
+        const s = state[id];
+        if (!hasCompositionEvidence(s)) {
+          result(id, "待观察", "未检测到 compositionstart/update/end，不能自动 PASS；请确认已选择 KEYI 拼音并用实体键盘重做。");
+          return false;
+        }
+        return true;
+      }
+
+      function check(id) {
+        const s = state[id];
+        const value = readValue(targetFor(id));
+        if (!requireEvidence(id)) return;
+        if (id === "route") {
+          const pass = s.keySequence.includes("nihao") && s.spaceCount > 0 && /[\u3400-\u9fff]/.test(value);
+          result(id, pass ? "PASS" : "FAIL", pass ? "检测到组合事件、空格和中文结果。" : "需要 nihao、Space、组合事件和中文结果；请清空后重做。");
+        } else if (id === "candidate") {
+          const observed = $("candidateObserved").value.trim();
+          const pass = s.keySequence.includes("shijie") && s.keySequence.includes("2") && observed && value.includes(observed);
+          result(id, pass ? "PASS" : "FAIL", pass ? "组合证据和人工记录的第 2 候选与文本结果一致。" : "请记录实际第 2 候选，并确认按 2 后文本框包含该候选。");
+        } else if (id === "backspace") {
+          const pass = s.keySequence.includes("ni") && s.backspaceCount >= 2 && value.trim() === "";
+          result(id, pass ? "PASS" : "FAIL", pass ? "两次退格后文本框为空。" : "需要 ni、两次 Backspace，且文本框为空。");
+        } else if (id === "escape") {
+          const pass = s.keySequence.includes("nihao") && s.escapeCount > 0 && !value.toLowerCase().includes("nihao");
+          result(id, pass ? "PASS" : "FAIL", pass ? "Escape 后未留下 nihao，前文仍可保留。" : "需要先完成前文，再输入 nihao 后按 Escape，并确认没有残留。");
+        } else if (id === "middle") {
+          const normalized = value.replace(/\s/g, "");
+          const pass = s.keySequence.includes("nihaox") && s.returnCount > 0 && normalized === "nixhao";
+          result(id, pass ? "PASS" : "FAIL", pass ? "中间编辑结果为 nixhao。" : "需要 nihao、左左右、x、Return，最终应为 nixhao。");
+        } else if (id === "return") {
+          const newlineCount = (value.match(/\n/g) || []).length;
+          const first = (s.firstReturnValue || "").replace(/\r\n/g, "\n");
+          const pass = s.keySequence.includes("nihao") && s.returnCount >= 2 && first === "nihao" && value.startsWith("nihao") && newlineCount === 1;
+          result(id, pass ? "PASS" : "FAIL", pass ? "第一次 Return 只提交 raw nihao，第二次才产生一个换行。" : "需要确认第一次 Return 后是 nihao 无换行，第二次才出现一个换行。");
+        } else if (id === "editable") {
+          const pass = s.keySequence.includes("nihao") && s.spaceCount > 0 && s.input > 0 && value.trim() !== "";
+          result(id, pass ? "PASS" : "FAIL", pass ? "contenteditable 收到组合事件和输入事件。" : "需要在可编辑区域用实体键盘完成 nihao + Space。");
+        } else if (id === "form") {
+          const first = (s.firstReturnValue || "").replace(/\r\n/g, "\n");
+          const pass = s.keySequence.includes("nihao") && s.returnCount >= 2 && first === "nihao" && s.firstReturnSubmitCount === 0 && s.submitCount === 1;
+          result(id, pass ? "PASS" : "FAIL", pass ? "第一次 Return 未提交表单，第二次本地提交计数为 1。" : "需要第一次 Return 保持提交次数 0，第二次才使本地计数加 1。");
+        }
+      }
+
+      function reset(id) {
+        state[id] = newState();
+        render(id);
+      }
+
+      document.querySelectorAll("[data-check]").forEach((button) => {
+        button.addEventListener("click", () => check(button.dataset.check));
+      });
+      document.querySelectorAll("[data-reset]").forEach((button) => {
+        button.addEventListener("click", () => reset(button.dataset.reset));
+      });
+      $("forwardVerdict").addEventListener("change", (event) => { state.forward.manualVerdict = event.target.value; });
+      document.querySelector("[data-manual='forward']").addEventListener("click", () => {
+        const s = state.forward;
+        const verdict = $("forwardVerdict").value;
+        if (verdict === "pass" && !hasCompositionEvidence(s)) {
+          result("forward", "待观察", "没有 composition 证据，不能把 Forward Delete 人工选择自动记为 PASS。");
+          return;
+        }
+        if (verdict === "pending") {
+          result("forward", "待观察", "等待人工确认 Forward Delete 的最终组合状态。");
+        } else if (verdict === "pass") {
+          result("forward", "PASS", "人工确认：Forward Delete 没有退格，组合状态保持一致。");
+        } else {
+          result("forward", "FAIL", "人工确认：Forward Delete 行为异常。");
+        }
+      });
+
+      $("imeForm").addEventListener("submit", (event) => {
+        event.preventDefault();
+        const s = state.form;
+        s.submitCount += 1;
+        if (s.returnCount === 1 && s.firstReturnSubmitCount === null) s.firstReturnSubmitCount = s.submitCount;
+        s.events.push(`${new Date().toLocaleTimeString()} submit localCount=${s.submitCount}`);
+        render("form");
+      });
+
+      $("copyJson").addEventListener("click", async () => {
+        const text = JSON.stringify(exportData(), null, 2);
+        try {
+          await navigator.clipboard.writeText(text);
+          $("jsonStatus").textContent = "JSON 已复制。";
+        } catch (_) {
+          $("jsonStatus").textContent = "浏览器禁止直接复制；请使用下载 JSON。";
+        }
+      });
+
+      $("downloadJson").addEventListener("click", () => {
+        const blob = new Blob([JSON.stringify(exportData(), null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "keyi-ime-native-acceptance.json";
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+        $("jsonStatus").textContent = "JSON 下载已开始。";
+      });
+
+      $("resetRecords").addEventListener("click", () => {
+        for (const id of stepIds) reset(id);
+        $("jsonStatus").textContent = "本页记录已重置；测试框内容未改动。";
+      });
+
+      function exportData() {
+        const steps = {};
+        for (const id of stepIds) {
+          const s = state[id];
+          steps[id] = {
+            title: stepTitles[id],
+            status: s.status,
+            note: s.note,
+            value: readValue(targetFor(id)),
+            composition: { start: s.compositionstart, update: s.compositionupdate, end: s.compositionend },
+            beforeinput: s.beforeinput,
+            input: s.input,
+            keydown: s.keydown,
+            keySequence: s.keySequence,
+            spaceCount: s.spaceCount,
+            returnCount: s.returnCount,
+            backspaceCount: s.backspaceCount,
+            forwardDeleteCount: s.forwardDeleteCount,
+            escapeCount: s.escapeCount,
+            firstReturnValue: s.firstReturnValue,
+            submitCount: s.submitCount,
+            firstReturnSubmitCount: s.firstReturnSubmitCount,
+            manualVerdict: s.manualVerdict,
+            events: s.events
+          };
+        }
+        return {
+          tool: "KEYI IME 01 native acceptance",
+          generatedAt: new Date().toISOString(),
+          inputSourceReminder: "KEYI 拼音 / KEYI Pinyin",
+          note: "被动浏览器观察，不注入事件；浏览器结果不能替代 TextEdit 实体键盘回归。",
+          steps
+        };
+      }
+
+      setCurrent("route");
+      stepIds.forEach(render);
+    })();
+  </script>
+</body>
+</html>

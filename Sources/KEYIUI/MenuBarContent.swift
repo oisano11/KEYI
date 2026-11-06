@@ -1,20 +1,34 @@
 import AppKit
 import KEYICore
+import KEYITranslationClient
 import SwiftUI
 
 struct StatusItemLabel: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        Label(model.strings.appName, systemImage: model.state.symbolName)
+        Label {
+            Text(model.strings.appName)
+        } icon: {
+            Image(nsImage: KEYIBirdMark.menuBarImage)
+        }
     }
 }
 
+/// 菜单栏菜单：顶部名称和服务状态，风格直接列出（后面写引擎），今天确认的汉字与 API 估算费用
+/// （与统计页同一份计数），然后是设置和退出。终端恢复、模型迁移、词库更新、下载进度等提示照旧插在最上面。
 struct MenuBarContent: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var dictionary: DictionaryUpdateModel = .shared
+    @ObservedObject var stats: StatisticsModel = .shared
 
     var body: some View {
         let strings = model.strings
+
+        Text(strings.appName)
+        Text(statusLine(strings))
+
+        Divider()
 
         if !model.terminalRecoveryCommands.isEmpty {
             Button(strings.copyOriginalTerminalCommand) {
@@ -26,34 +40,44 @@ struct MenuBarContent: View {
             Divider()
         }
 
-        Button(strings.settings) {
-            model.openSettings(.translation)
+        if model.showsLocalModelMigrationNotice {
+            // 只提示一次：点开即看过，之后不再出现。
+            Button(strings.localModelMigrationNotice) {
+                model.dismissLocalModelMigrationNotice()
+                model.openSettings(.providers(.localModel))
+            }
+            Divider()
         }
-        .keyboardShortcut(",")
 
-        Divider()
+        // 词库有新版时提一句，点开就是设置窗口里的词库更新对话框，看过说明再决定装不装。
+        if dictionary.pendingOffer != nil {
+            Button(strings.dictionaryMenuItem) {
+                model.openDictionaryUpdate()
+            }
+            Divider()
+        }
 
-        Menu(strings.translationMethod) {
-            ForEach(model.providerDescriptors) { provider in
-                Button {
-                    model.selectProvider(provider.id)
-                } label: {
-                    HStack {
-                        Text(strings.providerName(provider.id))
-                        if provider.id == model.selectedProviderID {
-                            Spacer()
-                            Image(systemName: "checkmark")
-                        } else if !provider.isAvailable {
-                            Spacer()
-                            Text(strings.unavailable)
-                        }
-                    }
+        if let fraction = model.localModelDownloadFraction {
+            Button(strings.localModelDownloadingMenu(Int(fraction * 100))) {
+                model.openSettings(.providers(.localModel))
+            }
+            Divider()
+        }
+
+        Section(strings.translationStyle) {
+            ForEach(KEYITranslationStyle.allCases, id: \.self) { style in
+                Toggle(isOn: Binding(
+                    get: { model.translationStyle == style },
+                    set: { if $0 { model.selectTranslationStyle(style) } }
+                )) {
+                    Text(strings.isEnglish
+                        ? "\(strings.translationStyleName(style)) (\(model.engineLabel(for: style)))"
+                        : "\(strings.translationStyleName(style))（\(model.engineLabel(for: style))）")
                 }
-                .disabled(!provider.isAvailable)
             }
         }
 
-        Menu(strings.targetLanguage) {
+        Menu(strings.menuValue(strings.targetLanguage, strings.languageName(model.selectedTargetLanguage))) {
             ForEach(TranslationLanguage.allCases) { language in
                 Button {
                     model.selectTargetLanguage(language)
@@ -70,49 +94,65 @@ struct MenuBarContent: View {
         }
         .disabled(model.isBusy)
 
-        if model.supportsTranslationCustomization {
-            Menu(strings.scene) {
-                ForEach(TranslationScene.allCases) { scene in
-                    Button {
-                        model.selectScene(scene)
-                    } label: {
-                        HStack {
-                            Text(strings.sceneName(scene))
-                            if scene == model.selectedScene {
-                                Spacer()
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
+        Divider()
+
+        Text(strings.menuValue(strings.menuTodayHanzi, (stats.days.first?.words.hanzi ?? 0).formatted()))
+        Text(strings.menuValue(strings.menuEstimatedCost, costText(stats.days.first?.cost ?? [:])))
+
+        Divider()
+
+        Button(strings.settings) {
+            model.openSettings(.translation)
+        }
+        .keyboardShortcut(",")
+
+        // 草稿桥是旧的桌面专项，和输入法主流程无关，收进「更多」。
+        Menu(strings.moreMenu) {
+            Button(strings.terminalDraftEditor) {
+                model.openTerminalDraftEditor()
             }
 
-            if model.supportsEnglishStyleCustomization {
-                Menu(strings.style) {
-                    ForEach(EnglishStyle.allCases) { englishStyle in
-                        Button {
-                            model.selectEnglishStyle(englishStyle)
-                        } label: {
-                            HStack {
-                                Text(strings.styleName(englishStyle))
-                                if englishStyle == model.selectedEnglishStyle {
-                                    Spacer()
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
+            if let guide = Bundle.main.url(forResource: "README", withExtension: "md", subdirectory: "Terminal") {
+                Button(strings.terminalDraftGuide) {
+                    NSWorkspace.shared.open(guide)
                 }
             }
         }
 
         Divider()
 
-        Button(strings.exit) {
+        Button(strings.quitApp) {
             NSApplication.shared.terminate(nil)
         }
+        .keyboardShortcut("q")
         .onAppear {
             model.refreshAccessibilityStatus()
+            stats.reload()
         }
+    }
+
+    /// 顶部状态行：翻译服务在跑，本地模型此刻加载到哪一步。
+    private func statusLine(_ strings: InterfaceStrings) -> String {
+        let local: String
+        if model.installedLocalModels.isEmpty {
+            local = strings.menuLocalModelMissing
+        } else {
+            switch model.localModelServerState {
+            case .ready: local = strings.menuLocalModelLoaded
+            case .starting: local = strings.menuLocalModelLoading
+            case .failed: local = strings.menuLocalModelFailed
+            case .stopped: local = strings.menuLocalModelIdle
+            }
+        }
+        return "● \(strings.menuServiceRunning) · \(local)"
+    }
+
+    private func costText(_ cost: [APIPrice.Currency: Double]) -> String {
+        let parts = APIPrice.Currency.allCases.compactMap { currency -> String? in
+            guard let amount = cost[currency], amount > 0 else { return nil }
+            let digits = amount < 0.01 ? 4 : 2
+            return currency.symbol + amount.formatted(.number.precision(.fractionLength(digits)))
+        }
+        return parts.isEmpty ? "¥0" : parts.joined(separator: " + ")
     }
 }

@@ -1,17 +1,12 @@
 import Foundation
 import OSLog
 import KEYICore
-
-struct LocalModelConfiguration: Sendable {
-    let endpoint: URL
-    let model: String
-    let loadKey: String
-}
+import KEYITranslationClient
+import KEYITranslationService
 
 enum TranslationSettingsError: LocalizedError {
     case unsupportedProvider
     case invalidEndpoint
-    case invalidLocalEndpoint
     case missingAPIKey
     case missingModel
 
@@ -20,7 +15,6 @@ enum TranslationSettingsError: LocalizedError {
         return switch self {
         case .unsupportedProvider: strings.unsupportedProvider
         case .invalidEndpoint: strings.invalidEndpoint
-        case .invalidLocalEndpoint: strings.invalidLocalEndpoint
         case .missingAPIKey: strings.missingAPIKey
         case .missingModel: strings.missingModel
         }
@@ -36,16 +30,7 @@ final class TranslationSettingsStore {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        self.preferences = TranslationPreferences()
-        if let data = defaults.data(forKey: preferencesKey),
-           let stored = try? JSONDecoder().decode(
-               TranslationPreferences.self,
-               from: data
-           ) {
-            preferences = stored
-        } else {
-            preferences = TranslationPreferences()
-        }
+        self.preferences = Self.decodePreferences(from: defaults, key: preferencesKey)
 
         if let storedLanguage = defaults.string(
             forKey: InterfaceLanguageStorage.key
@@ -66,6 +51,39 @@ final class TranslationSettingsStore {
             persistPreferences()
         }
         migrateLegacyVolcengineConfigurationIfNeeded()
+        migrateLegacyLocalModelIfNeeded()
+    }
+
+    /// 无副作用地重新读取已保存配置；复用 init 的存储键与解码规则。
+    ///
+    /// 子进程与父进程共用同一 UserDefaults domain；`synchronize()` 仅是显式
+    /// 请求落盘值，真正保证跨进程可见的是这里每次读取磁盘最新值。
+    func reloadPreferences() {
+        defaults.synchronize()
+        var reloaded = Self.decodePreferences(
+            from: defaults,
+            key: preferencesKey
+        )
+        if let storedLanguage = defaults.string(
+            forKey: InterfaceLanguageStorage.key
+        ), let language = InterfaceLanguage(rawValue: storedLanguage) {
+            reloaded.interfaceLanguage = language
+        }
+        preferences = reloaded
+    }
+
+    private static func decodePreferences(
+        from defaults: UserDefaults,
+        key: String
+    ) -> TranslationPreferences {
+        guard let data = defaults.data(forKey: key),
+              let stored = try? JSONDecoder().decode(
+                  TranslationPreferences.self,
+                  from: data
+              ) else {
+            return TranslationPreferences()
+        }
+        return stored
     }
 
     func select(_ providerID: TranslationProviderID) -> Bool {
@@ -139,55 +157,61 @@ final class TranslationSettingsStore {
         return stored
     }
 
-    func localModelEndpoint() -> String {
-        defaults.string(forKey: localEndpointKey)
-            ?? LocalModelCatalog.gemma4.defaultEndpoint
-    }
-
-    /// 返回设置页应展示的本地地址；未配置时不暴露运行时默认值。
-    func configuredLocalModelEndpoint() -> String? {
-        defaults.string(forKey: localEndpointKey)
-    }
-
-    func localModelName() -> String {
-        defaults.string(forKey: localModelKey)
-            ?? LocalModelCatalog.gemma4.defaultModel
-    }
-
-    /// 返回设置页应展示的模型名；未配置时不暴露运行时默认值。
-    func configuredLocalModelName() -> String? {
-        defaults.string(forKey: localModelKey)
-    }
-
-    func saveLocalModelConfiguration(
-        endpoint: String,
-        model: String
-    ) throws {
-        guard let url = URL(string: endpoint), isAllowedLocalEndpoint(url) else {
-            throw TranslationSettingsError.invalidLocalEndpoint
+    /// 当前翻译风格。旧版用户第一次读取时，按原来的「翻译方式/场景/英语风格」推出最接近的一种并存下。
+    func translationStyle() -> KEYITranslationStyle {
+        if let stored = defaults.string(forKey: KEYITranslationStyle.storageKey)
+            .flatMap(KEYITranslationStyle.init(rawValue:)) {
+            return stored
         }
-        let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedModel.isEmpty else {
-            throw TranslationSettingsError.missingModel
-        }
-        defaults.set(url.absoluteString, forKey: localEndpointKey)
-        defaults.set(normalizedModel, forKey: localModelKey)
+        let migrated = TranslationStyleRouting.migratedStyle(from: preferences)
+        defaults.set(migrated.rawValue, forKey: KEYITranslationStyle.storageKey)
+        return migrated
     }
 
-    func localModelConfiguration() throws -> LocalModelConfiguration {
-        guard let endpoint = URL(string: localModelEndpoint()),
-              isAllowedLocalEndpoint(endpoint) else {
-            throw TranslationSettingsError.invalidLocalEndpoint
+    func selectTranslationStyle(_ style: KEYITranslationStyle) {
+        defaults.set(style.rawValue, forKey: KEYITranslationStyle.storageKey)
+    }
+
+    /// 写给输入法菜单看的「风格 → 引擎名」。
+    func storeEngineLabels(_ labels: [KEYITranslationStyle: String]) {
+        let raw = Dictionary(uniqueKeysWithValues: labels.map { ($0.key.rawValue, $0.value) })
+        defaults.set(raw, forKey: KEYITranslationStyle.engineLabelsKey)
+    }
+
+    func storedEngineLabels() -> [String: String] {
+        defaults.dictionary(forKey: KEYITranslationStyle.engineLabelsKey) as? [String: String] ?? [:]
+    }
+
+    /// 云端风格用的服务：上次选用的那家已配置就用它，否则按清单顺序取第一个已配置的。
+    func preferredCloudProvider(
+        isConfigured: (TranslationProviderID) -> Bool
+    ) -> TranslationProviderID? {
+        if preferences.providerID.requiresAPIConfiguration, isConfigured(preferences.providerID) {
+            return preferences.providerID
         }
-        let model = localModelName().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !model.isEmpty else {
-            throw TranslationSettingsError.missingModel
-        }
-        return LocalModelConfiguration(
-            endpoint: endpoint,
-            model: model,
-            loadKey: LocalModelCatalog.gemma4.defaultLoadKey
-        )
+        return APITranslationProviderCatalog.profiles.map(\.providerID).first(where: isConfigured)
+    }
+
+    func isAPIConfigured(_ providerID: TranslationProviderID) -> Bool {
+        hasStoredAPIConfiguration(for: providerID) && hasAPIKey(for: providerID)
+    }
+
+    /// 本地模型通道用哪一档 Hy-MT2；用户还没选过时为 nil。
+    func localModelTier() -> LocalTranslationModelTier? {
+        defaults.string(forKey: localModelTierKey).flatMap(LocalTranslationModelTier.init(rawValue:))
+    }
+
+    func selectLocalModelTier(_ tier: LocalTranslationModelTier) {
+        defaults.set(tier.rawValue, forKey: localModelTierKey)
+    }
+
+    /// 旧版 LM Studio 配置被迁移后、用户还没看过提示时为 true。
+    var hasLocalModelMigrationNotice: Bool {
+        defaults.bool(forKey: localModelMigrationNoticeKey)
+    }
+
+    func clearLocalModelMigrationNotice() {
+        defaults.removeObject(forKey: localModelMigrationNoticeKey)
     }
 
     func saveAPIConfiguration(
@@ -273,6 +297,22 @@ final class TranslationSettingsStore {
         }
     }
 
+    /// 本地模型通道不再连 LM Studio：删掉旧的地址和模型名；正在用它翻译的改回苹果系统翻译，并留一次提示。
+    private func migrateLegacyLocalModelIfNeeded() {
+        for key in Self.legacyLocalModelKeys {
+            defaults.removeObject(forKey: key)
+        }
+        guard preferences.providerID == .localModel, localModelTier() == nil else { return }
+        preferences.providerID = .appleSystem
+        persistPreferences()
+        defaults.set(true, forKey: localModelMigrationNoticeKey)
+    }
+
+    private static let legacyLocalModelKeys = [
+        "translation.local.endpoint",
+        "translation.local.gemma4.model"
+    ]
+
     private static let logger = Logger(
         subsystem: "com.keyi.input-translator",
         category: "Settings"
@@ -299,22 +339,6 @@ final class TranslationSettingsStore {
         "translation.api.\(providerID.rawValue).model"
     }
 
-    private var localEndpointKey: String {
-        "translation.local.endpoint"
-    }
-
-    private var localModelKey: String {
-        "translation.local.gemma4.model"
-    }
-
-    private func isAllowedLocalEndpoint(_ url: URL) -> Bool {
-        guard let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https",
-              let host = url.host?.lowercased() else {
-            return false
-        }
-        return host == "localhost"
-            || host == "127.0.0.1"
-            || host == "::1"
-    }
+    private let localModelTierKey = "translation.local.tier"
+    private let localModelMigrationNoticeKey = "translation.local.migrationNotice"
 }

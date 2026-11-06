@@ -1,0 +1,35 @@
+# KEYI 拼音的英文词表（中英混输）。
+# encoding: utf-8
+#
+# 只作为 keyi_pinyin 的第二个词表（table_translator@keyi_english）由它部署，
+# 不单独作为输入方案出现。拼写规则：去掉单词里的符号、统一成小写去匹配所打的字母
+# （Node.js → nodejs，GitHub → github）。KEYI 自己编写。
+
+schema:
+  schema_id: keyi_english
+  name: KEYI English
+  version: "1.0"
+
+engine:
+  processors:
+    - speller
+    - selector
+    - navigator
+    - express_editor
+  segmentors:
+    - abc_segmentor
+    - fallback_segmentor
+  translators:
+    - table_translator
+
+speller:
+  alphabet: zyxwvutsrqponmlkjihgfedcba
+  delimiter: " '"
+  algebra:
+    - derive/[^a-zA-Z0-9]//
+    - erase/^[^a-zA-Z0-9].*$/
+    - derive/^.+$/\L$0/
+
+translator:
+  dictionary: keyi_english
+  enable_sentence: false

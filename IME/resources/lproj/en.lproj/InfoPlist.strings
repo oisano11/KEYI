@@ -1,0 +1,7 @@
+/* Localized versions of Info.plist keys for the KEYI input method. */
+
+CFBundleDisplayName = "KEYI Input Method";
+CFBundleName = "KEYI Input Method";
+
+/* Input mode name, keyed by the full input mode identifier. */
+"com.keyi.inputmethod.keyi.pinyin" = "KEYI Pinyin";

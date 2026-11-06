@@ -39,6 +39,28 @@ KEYI 可译是 macOS 和 Windows 的桌面输入翻译工具。选中文字，�
 
 中文：选中文字优先；没有选区时翻译当前输入框。翻译完成后直接写回原位置，不自动发送。
 
+## KEYI 输入法：打中文自动出英文（macOS，实验）
+
+`IME/` 是 KEYI 自带的 macOS 中文拼音输入法 **KEYIIME**（InputMethodKit + librime + 雾凇拼音词库）。
+选它打字时不需要任何翻译快捷键：确认的中文先带下划线留在输入框里，光标旁的面板实时显示候选和
+中英对照；整段写完按**回车**换成英文上屏（只换英文、不发送），**单按 Shift** 原样保留中文。
+翻译由 KEYI 可译在本机完成或转给你配置的服务，输入法进程本身不联网、不持有凭据。
+
+翻译风格只选「想要什么样的英文」：自然、正式商务、贴近原文用 KEYI 自带的本地模型
+（腾讯混元 Hy-MT2，设置里下载），文字不出本机；地道美式口语等口语风格用你配置的大模型 API。
+
+从源码构建与安装（需要 macOS 15+）：
+
+```sh
+Scripts/build-app.sh                      # KEYI 可译（翻译服务在它里面）
+IME/Scripts/build-ime.sh release          # 输入法
+IME/Scripts/install-ime.sh release        # 装到 ~/Library/Input Methods，不自动启用
+```
+
+然后在「系统设置 → 键盘 → 文字输入 → 编辑…」添加「简体中文 → KEYI 拼音」。用法、检查和
+词库许可见 [IME/README.md](IME/README.md)；雾凇拼音词库保留其上游 GPL-3.0 等许可，见
+[IME/THIRD_PARTY_NOTICES.md](IME/THIRD_PARTY_NOTICES.md)。
+
 ## Quick Start / 快速开始
 
 ### macOS：安装实验 DMG
@@ -76,7 +98,7 @@ Scripts/build-app.sh
 
 构建产物为 `.build/KEYI 可译.app`。首次使用时，在“系统设置 → 隐私与安全性 → 辅助功能”中允许 KEYI 可译。
 
-默认构建仅用于本机开发；没有 Apple Developer 证书时会优先使用本机可用的开发签名，找不到时才使用 ad-hoc 签名。两者都不能作为受支持的正式分发包。源码 Release 不需要 Apple 证书。
+默认构建仅用于本机开发：使用本机钥匙串里的 Apple Development 证书签名（免费的 Xcode 个人团队即可生成），找不到时使用 ad-hoc 签名。两者都不能作为受支持的正式分发包。源码 Release 不需要 Apple 证书。
 
 macOS 正式二进制发布前，必须加入 Apple Developer Program，在开发者后台登记 Bundle ID `com.keyi.input-translator`，创建并安装 `Developer ID Application` 证书，然后显式执行：
 
@@ -107,7 +129,7 @@ Scripts/package-experimental-binaries.sh
 - API Key 保存在当前用户的系统凭据存储（macOS 钥匙串、Windows 凭据管理器），不写入仓库。
 - 使用云端翻译时，KEYI 可译只向你选择的服务发送待翻译文字。
 - 本地模型模式可在本机使用完整输入框上下文以改善语境；该内容不离开本机。
-- 本地服务目前仅支持“应用程序”目录中已签名的 LM Studio 桌面版及其应用内服务进程；独立运行时和无法确认身份的服务会被拒绝。
+- 本地模型是 KEYI 自带的 Hy-MT2-1.8B：由你在设置里下载并校验 sha256，KEYI 打包官方 llama.cpp `llama-server` 运行，只走本用户 UNIX socket 加随机密钥，不对外监听。
 - macOS 仅从辅助功能接口读取可确认的选区；完全不暴露文本的控件不再通过剪贴板猜测来源。
 - 终端替换中断后，可从 KEYI 菜单复制保留的原命令，再手动恢复；退出应用会清除尚未取回的原命令。
 - 请勿在密码框、只读区域或不允许处理敏感内容的输入框中使用。

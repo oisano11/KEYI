@@ -135,24 +135,6 @@ expect(
     TranslationProviderCatalog.descriptor(for: .localModel).name == "本地模型",
     "本地提供方应使用通用产品名称"
 )
-expect(
-    LocalModelCatalog.gemma4.defaultEndpoint == "http://127.0.0.1:1234/v1/chat/completions",
-    "Gemma 4 默认 Endpoint 应指向 LM Studio 本地服务"
-)
-expect(
-    LocalModelCatalog.gemma4.defaultModel == "keyi-gemma4"
-        && LocalModelCatalog.gemma4.defaultLoadKey == "gemma-4-12b-it",
-    "Gemma 4 应有稳定的本地服务模型标识和加载键"
-)
-expect(
-    LocalModelCatalog.gemma4.completionTokenBudget == 1024,
-    "Gemma 4 非推理翻译应使用紧凑输出预算"
-)
-expect(
-    LocalModelCatalog.gemma4.idleTTLSeconds == 180,
-    "Gemma 4 应在闲置 3 分钟后自动卸载"
-)
-
 let apiProfiles = APITranslationProviderCatalog.profiles
 expect(apiProfiles.count == 5, "应提供五家云模型 API 配置")
 expect(
@@ -336,7 +318,7 @@ let sharedMeaningRules = [
     "An idiomatic or colloquial equivalent does not need a matching word in the source.",
     "Plain sentences can be plain; expressive sentences should keep their personality.",
     "Preserve profanity already present in the source with equivalent force and target.",
-    "New profanity is allowed only where the selected voice permits it.",
+    "Never add profanity the source does not have.",
     "Do not invent slurs, threats, or personal attacks.",
     "Use punctuation natural to English."
 ]
@@ -346,8 +328,8 @@ let blackAmericanConstraints = [
     "not synonymous with slang or profanity",
     "Authentic dialect grammar is valid English, not an error to automatically standardise away",
     "habitual forms express recurring behaviour, not an action happening only now",
-    "strong profanity reserved for unmistakably intense anger or excitement",
-    "Do not add profanity to business, faithful, factual or numeric statements, grief, distress, or apologies",
+    "never through added swearing: if the source has no swear word, the translation has none",
+    "never as \"You up?\"",
     "Keep situational frustration aimed at the situation, not a new personal target"
 ]
 let otherEnglishStyleRules: [EnglishStyle: [String]] = [
@@ -393,13 +375,10 @@ for scene in TranslationScene.allCases {
                     "风格段启停不正确: \(scene)/\(style)/\(candidate)"
                 )
             }
-            expect(
-                prompt.contains(addedProfanityPermission) == (styleEnabled && style == .blackAmerican),
-                "额外脏话许可只属于启用的黑人美式风格"
-            )
+            expect(!prompt.contains(addedProfanityPermission), "任何风格都不得允许原文没有的脏话")
             if styleEnabled && style == .blackAmerican {
                 for constraint in blackAmericanConstraints {
-                    expect(prompt.contains(constraint), "脏话许可必须保留边界: \(constraint)")
+                    expect(prompt.contains(constraint), "黑人英语风格必须保留边界: \(constraint)")
                 }
             }
             for (candidate, rules) in otherEnglishStyleRules {
@@ -413,7 +392,7 @@ for scene in TranslationScene.allCases {
             expect(!prompt.contains("Do not change tense"), "语义保真不得冻结英语时态形式")
             expect(!prompt.contains("Do not add slang or profanity unless"), "自然口语不需要原文逐词许可")
             if scene == .automatic {
-                expect(prompt.contains("ignore conversational voice and added-profanity permissions"), "自动商务和措辞敏感场景必须覆盖口语许可")
+                expect(prompt.contains("ignore the conversational voice"), "自动商务和措辞敏感场景必须覆盖口语风格")
                 expect(prompt.contains("Ordinary factual text can retain the selected variety's natural vocabulary and spelling"), "普通事实不能一律抹掉英美用词差异")
                 expect(prompt.contains("If uncertain, choose neutral natural English"), "不确定时不得默认强行聊天化")
             }
@@ -480,7 +459,7 @@ private final class StubURLProtocol: URLProtocol {
     override func stopLoading() {}
 
     // URLSession 会把 httpBody 挪进 httpBodyStream，需要从流里读回。
-    private static func readBody(of request: URLRequest) -> Data {
+    static func readBody(of request: URLRequest) -> Data {
         if let body = request.httpBody { return body }
         guard let stream = request.httpBodyStream else { return Data() }
         stream.open()
@@ -570,6 +549,48 @@ let volcPayload = try! JSONSerialization.jsonObject(
 expect(volcPayload["source_text"] as? String == "你好", "火山请求应发送原始待翻译文本")
 expect(volcPayload["full_input_context"] == nil, "火山请求不得携带完整输入框上下文")
 
+// 费用统计：返回里的 usage 交给记录器，按天累计并按单价估算。
+final class UsageBox: @unchecked Sendable { var calls: [(TranslationProviderID, APITokenUsage)] = [] }
+let usageBox = UsageBox()
+StubURLProtocol.respond = { _ in
+    (200, "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"Hi\"}}],\"usage\":{\"prompt_tokens\":120,\"completion_tokens\":8,\"total_tokens\":128}}")
+}
+_ = try await OpenAICompatibleTranslationProvider(
+    configuration: APIProviderConfiguration(
+        providerID: .qwen,
+        apiKey: "test-secret",
+        endpoint: URL(string: "https://example.test/chat/completions")!,
+        model: "qwen-plus"
+    ),
+    session: stubSession,
+    usageRecorder: { usageBox.calls.append(($0, $1)) }
+).translate(TextTranslationRequest(sourceText: "你好", targetLanguage: .english))
+expect(usageBox.calls.count == 1, "有 usage 的返回应记一次用量")
+expect(usageBox.calls.first?.0 == .qwen, "用量应记在发出请求的服务名下")
+expect(usageBox.calls.first?.1 == APITokenUsage(inputTokens: 120, outputTokens: 8), "应读出输入/输出 token")
+_ = try await stubChatProvider.translate(TextTranslationRequest(sourceText: "你好", targetLanguage: .english))
+expect(usageBox.calls.count == 1, "没传记录器的提供方不记用量")
+
+let ledgerURL = FileManager.default.temporaryDirectory
+    .appendingPathComponent("keyi-usage-\(UUID().uuidString).json")
+defer { try? FileManager.default.removeItem(at: ledgerURL) }
+let ledger = APIUsageLedger(fileURL: ledgerURL)
+let usageDay = Date(timeIntervalSince1970: 1_800_000_000)
+ledger.record(providerID: .deepSeek, usage: APITokenUsage(inputTokens: 1_000_000, outputTokens: 500_000), date: usageDay)
+ledger.record(providerID: .deepSeek, usage: APITokenUsage(inputTokens: 0, outputTokens: 500_000), date: usageDay)
+ledger.record(providerID: .xAI, usage: APITokenUsage(inputTokens: 500_000, outputTokens: 0), date: usageDay)
+let usageKey = APIUsageLedger.dayKey(for: usageDay)
+let usageSnapshot = APIUsageLedger(fileURL: ledgerURL).snapshot()
+expect(usageSnapshot.totals(on: usageKey)[.deepSeek] == APIUsageTotals(requests: 2, inputTokens: 1_000_000, outputTokens: 1_000_000), "同一天同一服务应累加")
+expect(usageSnapshot.cost(on: usageKey)[.cny] == 5, "DeepSeek 默认单价 ¥2/¥3 每百万应估算为 ¥5")
+expect(usageSnapshot.cost(on: usageKey)[.usd] == 1, "xAI 默认 $2 每百万输入应估算为 $1")
+ledger.setPrice(APIPrice(inputPerMillion: 4, outputPerMillion: 0, currency: .cny), for: .deepSeek)
+expect(ledger.snapshot().cost(on: usageKey)[.cny] == 4, "改过的单价应覆盖默认值")
+ledger.record(providerID: .qwen, usage: APITokenUsage(inputTokens: 1, outputTokens: 1),
+              date: usageDay.addingTimeInterval(Double(APIUsageLedger.retainedDays + 1) * 86_400))
+expect(ledger.snapshot().days[usageKey] == nil, "超过保留天数的记录应删掉")
+expect(APIPriceCatalog.defaultPrice(for: .appleSystem) == nil && APIPriceCatalog.defaultPrice(for: .localModel) == nil, "苹果翻译和本地模型不计费")
+
 StubURLProtocol.respond = { _ in (401, "{\"error\":{\"message\":\"bad key\"}}") }
 var httpFailure: (
     providerID: TranslationProviderID,
@@ -628,5 +649,169 @@ do {
     truncatedResponseRejected = true
 }
 expect(truncatedResponseRejected, "截断且非空的译文不得作为成功结果返回")
+
+expect(
+    LocalTranslationModelCatalog.models.map(\.tier) == LocalTranslationModelTier.allCases,
+    "本地模型清单应恰好列出两档"
+)
+for model in LocalTranslationModelCatalog.models {
+    expect(model.sha256.count == 64 && model.byteCount > 1_000_000_000, "每档都应有完整的 sha256 和字节数: \(model.tier)")
+    expect(
+        model.downloadURLs.map { $0.host() } == ["modelscope.cn", "huggingface.co"],
+        "下载来源应先 ModelScope 后 Hugging Face: \(model.tier)"
+    )
+    expect(
+        model.downloadURLs.allSatisfy { $0.lastPathComponent == model.fileName && $0.scheme == "https" },
+        "下载地址应指向固定版本里的同名文件: \(model.tier)"
+    )
+}
+let lightModel = LocalTranslationModelCatalog.model(for: .light)
+let standardModel = LocalTranslationModelCatalog.model(for: .standard)
+expect(!lightModel.usesSceneContext && standardModel.usesSceneContext, "只有标准档写入场景和上下文")
+let hyMTSampling = LocalTranslationModelCatalog.sampling
+expect(
+    hyMTSampling.temperature == 0.2 && hyMTSampling.topP == 0.6 && hyMTSampling.topK == 20
+        && hyMTSampling.repeatPenalty == 1.05 && hyMTSampling.maxTokens == 4096,
+    "采样参数按 Hy-MT2 README 对 1.8B 的推荐值，只把温度降到 0.2 求稳定"
+)
+
+let hyStyledRequest = TextTranslationRequest(
+    sourceText: "这也太离谱了",
+    contextText: "回复：外卖送错楼了\n这也太离谱了",
+    scene: .socialMedia,
+    englishStyle: .british
+)
+let hyLightPrompt = HyMTPromptBuilder.userMessage(for: hyStyledRequest, model: lightModel)
+expect(
+    hyLightPrompt == "将以下文本翻译为英语，注意只需要输出翻译后的结果，不要额外解释：\n\n这也太离谱了",
+    "轻量档应使用官方默认翻译模板"
+)
+let hyStandardPrompt = HyMTPromptBuilder.userMessage(for: hyStyledRequest, model: standardModel)
+expect(hyStandardPrompt.hasPrefix("【背景信息】\n场景：社交媒体"), "标准档应先写场景背景")
+expect(!hyStandardPrompt.contains("风格："), "本地模型不写英语风格")
+expect(hyStandardPrompt.contains("输入框全文（只作参考，不要翻译）：\n回复：外卖送错楼了"), "标准档应把输入框全文作为参考")
+expect(hyStandardPrompt.hasSuffix("请结合背景信息将以下文本翻译为英语。\n\n【待翻译文本】\n这也太离谱了"), "标准档应使用官方背景信息模板")
+
+let hyBusinessPrompt = HyMTPromptBuilder.userMessage(
+    for: TextTranslationRequest(sourceText: "请确认数量", scene: .business, englishStyle: .blackAmerican),
+    model: standardModel
+)
+expect(hyBusinessPrompt.contains("场景：商务") && !hyBusinessPrompt.contains("风格："), "商务场景不得写入英语风格")
+let hyJapanesePrompt = HyMTPromptBuilder.userMessage(
+    for: TextTranslationRequest(sourceText: "你好", targetLanguage: .japanese, scene: .dailyChat, englishStyle: .british),
+    model: standardModel
+)
+expect(hyJapanesePrompt.contains("翻译为日语") && !hyJapanesePrompt.contains("风格："), "非英语目标不得写入英语风格")
+let hyPlainStandardPrompt = HyMTPromptBuilder.userMessage(
+    for: TextTranslationRequest(sourceText: "你好", contextText: "你好"),
+    model: standardModel
+)
+expect(hyPlainStandardPrompt.hasPrefix("将以下文本翻译为英语"), "没有背景可写时标准档也用默认模板")
+let hyLongContextPrompt = HyMTPromptBuilder.userMessage(
+    for: TextTranslationRequest(sourceText: "好", contextText: String(repeating: "长", count: 3000) + "结尾", scene: .dailyChat),
+    model: standardModel
+)
+expect(hyLongContextPrompt.contains("结尾") && hyLongContextPrompt.count < 1300, "过长的输入框全文只保留结尾部分")
+
+let hyGlossaryPrompt = HyMTPromptBuilder.userMessage(
+    for: TextTranslationRequest(sourceText: "在吗？地铁坐过站了", scene: .dailyChat),
+    model: lightModel
+)
+expect(
+    hyGlossaryPrompt == "参考下面的翻译：\n在吗 翻译成 you around?\n坐过站 翻译成 missed my stop\n\n将以下文本翻译为英语，注意只需要输出翻译后的结果，不要额外解释：\n\n在吗？地铁坐过站了",
+    "原文里出现的常用词应按术语干预模板放在最前面"
+)
+let hyGlossaryStandardPrompt = HyMTPromptBuilder.userMessage(
+    for: TextTranslationRequest(sourceText: "我在楼下", scene: .dailyChat),
+    model: standardModel
+)
+expect(
+    hyGlossaryStandardPrompt.hasPrefix("参考下面的翻译：\n楼下 翻译成 downstairs\n\n【背景信息】"),
+    "标准档的术语放在背景信息之前"
+)
+expect(!hyLightPrompt.contains("参考下面的翻译"), "没有命中常用词时不加术语")
+let hyJapaneseGlossaryPrompt = HyMTPromptBuilder.userMessage(
+    for: TextTranslationRequest(sourceText: "在吗", targetLanguage: .japanese),
+    model: lightModel
+)
+expect(!hyJapaneseGlossaryPrompt.contains("参考下面的翻译"), "英语术语表不用于其他目标语言")
+expect(
+    HyMTGlossary.englishEntries(in: "我帮你问问老王，小李也在").map(\.target) == ["Lao Wang", "Xiao Li"],
+    "老/小 + 常见姓保留拼音称呼"
+)
+expect(
+    HyMTGlossary.englishEntries(in: "老师说小米手机老黄历").isEmpty,
+    "不是常见姓的「老/小」词不当称呼"
+)
+expect(
+    HyMTGlossary.englishEntries(in: "老王老王").count == 1,
+    "同一称呼只写一次"
+)
+expect(
+    Set(HyMTGlossary.english.map(\.source)).count == HyMTGlossary.english.count,
+    "术语表不得有重复词条"
+)
+
+// MARK: - 个人术语表（临时目录，不碰用户真实文件）
+
+let glossaryDirectory = FileManager.default.temporaryDirectory
+    .appendingPathComponent("keyi-glossary-\(UUID().uuidString)", isDirectory: true)
+defer { try? FileManager.default.removeItem(at: glossaryDirectory) }
+let personalGlossary = PersonalGlossary(directory: glossaryDirectory)
+let gitSample = PersonalGlossary.Sample(source: "把可译的灰度发布推到雾凇仓库", translation: "Push the KEYI canary release to the rime-ice repo")
+personalGlossary.collect(gitSample)
+expect(personalGlossary.pendingCount == 0, "术语表关闭时什么都不暂存")
+personalGlossary.setEnabled(true)
+expect(personalGlossary.collect(gitSample) == 1, "打开后暂存大模型译过的整句")
+expect(personalGlossary.collect(gitSample) == 1, "同一原文只留一句")
+expect(personalGlossary.collect(.init(source: "hello", translation: "hello")) == 1, "没有汉字的句子不暂存")
+expect(
+    PersonalGlossary.parseExtraction("```json\n[{\"zh\":\"灰度发布\",\"en\":\"canary release\"}]\n```").count == 1,
+    "提炼结果包在代码块里也能解析"
+)
+let mergedCount = personalGlossary.merge(
+    [("灰度发布", "canary release"), ("可译", "KEYI"), ("编出来的词", "made up"), ("仓库", "warehouse"), ("推", "push")],
+    from: [gitSample]
+)
+expect(mergedCount == 2, "只收原句里出现、译文里也出现的词对，单字和编造的不收")
+expect(personalGlossary.terms.map(\.source) == ["可译", "灰度发布"], "术语按原文排序存下")
+personalGlossary.merge([("灰度发布", "canary release")], from: [gitSample])
+expect(personalGlossary.terms.first { $0.source == "灰度发布" }?.count == 2, "同一译法再出现时次数加一")
+let glossaryRequest = TextTranslationRequest(sourceText: "灰度发布前在吗", targetLanguage: .english)
+let glossaryPrompt = HyMTPromptBuilder.userMessage(for: glossaryRequest, model: standardModel, personal: personalGlossary)
+expect(
+    glossaryPrompt.contains("灰度发布 翻译成 canary release") && glossaryPrompt.contains("在吗 翻译成 you around?"),
+    "本地模型提示里固定词表和个人术语一起附上"
+)
+expect(
+    !HyMTPromptBuilder.userMessage(
+        for: TextTranslationRequest(sourceText: "灰度发布", targetLanguage: .chinese), model: standardModel, personal: personalGlossary
+    ).contains("canary"),
+    "目标不是英文时不附个人术语"
+)
+personalGlossary.setEnabled(false)
+expect(personalGlossary.entries(in: "灰度发布").isEmpty, "关闭后不再附个人术语")
+expect(personalGlossary.pendingCount == 0, "关闭时清掉暂存的整句")
+expect(personalGlossary.terms.count == 2, "关闭不删已整理的术语")
+personalGlossary.setEnabled(true)
+
+// 包装的大模型提供方：攒够一批在后台提炼（这里直接调提炼，桩区分翻译和提炼两种请求）。
+StubURLProtocol.respond = { request in
+    let body = String(decoding: StubURLProtocol.readBody(of: request), as: UTF8.self)
+    if body.contains("术语表") {
+        return (200, "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"[{\\\"zh\\\":\\\"雾凇\\\",\\\"en\\\":\\\"rime-ice\\\"}]\"}}]}")
+    }
+    return (200, "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"Updated rime-ice.\"}}]}")
+}
+let collecting = GlossaryCollectingProvider(inner: stubChatProvider, glossary: personalGlossary)
+let collectedTranslation = try await collecting.translate(TextTranslationRequest(sourceText: "更新了雾凇", targetLanguage: .english))
+expect(collectedTranslation == "Updated rime-ice.", "包装不改译文")
+expect(personalGlossary.pendingCount == 1, "包装把译过的整句交给术语表暂存")
+let extractedCount = try await GlossaryCollectingProvider.extract(with: stubChatProvider, into: personalGlossary)
+expect(extractedCount == 1 && personalGlossary.terms.contains { $0.source == "雾凇" && $0.target == "rime-ice" },
+       "提炼后新词条进入术语表")
+expect(personalGlossary.pendingCount == 0, "提炼一次即删除暂存的整句")
+personalGlossary.clear()
+expect(personalGlossary.terms.isEmpty && personalGlossary.isEnabled, "清空删词条、开关不变")
 
 print("KEYICore checks passed: \(checkCount)")

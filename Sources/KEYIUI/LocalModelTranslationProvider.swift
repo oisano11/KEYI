@@ -1,152 +1,98 @@
 import Foundation
 import KEYICore
 
+/// 本地模型通道：把一条 Hy-MT2 提示词交给 KEYI 自带的 llama-server。
 struct LocalModelTranslationProvider: TranslationProvider {
-    let id: TranslationProviderID = .localModel
-    private let configuration: LocalModelConfiguration
-    private let session: URLSession
-    private let validateEndpoint: @Sendable (URL) throws -> Void
+    /// 发出一次 chat completion 请求并返回原始响应；测试里替换成桩。
+    typealias Transport = @Sendable (_ body: Data) async throws -> LocalModelHTTPResponse
 
-    init(configuration: LocalModelConfiguration, session: URLSession = LocalModelTrust.session,
-         validateEndpoint: @escaping @Sendable (URL) throws -> Void = LocalModelTrust.validate) {
-        self.configuration = LocalModelConfiguration(
-            endpoint: LocalModelTrust.directEndpoint(configuration.endpoint),
-            model: configuration.model,
-            loadKey: configuration.loadKey
-        )
-        self.session = session
-        self.validateEndpoint = validateEndpoint
+    /// 服务刚启动、模型还在后台加载时，一次翻译最多等这么久。
+    static let readyTimeout: Duration = .seconds(10)
+    static let requestTimeout: Duration = .seconds(60)
+
+    let id: TranslationProviderID = .localModel
+    private let model: LocalTranslationModel
+    private let transport: Transport
+
+    init(model: LocalTranslationModel, transport: @escaping Transport) {
+        self.model = model
+        self.transport = transport
+    }
+
+    /// 连自带服务：主应用和翻译服务子进程都经运行目录里的 socket 与密钥找到它。
+    static func bundled(model: LocalTranslationModel) -> LocalModelTranslationProvider {
+        LocalModelTranslationProvider(model: model) { body in
+            let endpoint = try await LocalModelConnection.readyEndpoint(waitingUpTo: readyTimeout)
+            return try await LocalModelHTTPClient.send(
+                "POST", "/v1/chat/completions",
+                body: body,
+                to: endpoint,
+                timeout: requestTimeout
+            )
+        }
     }
 
     func translate(_ request: TextTranslationRequest) async throws -> String {
         guard !request.sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw LocalModelTranslationError.emptySource
         }
+        let sampling = LocalTranslationModelCatalog.sampling
+        let body = try JSONEncoder().encode(LocalChatCompletionRequest(
+            messages: [LocalChatMessage(
+                role: "user",
+                content: HyMTPromptBuilder.userMessage(for: request, model: model)
+            )],
+            temperature: sampling.temperature,
+            topP: sampling.topP,
+            topK: sampling.topK,
+            repeatPenalty: sampling.repeatPenalty,
+            maxTokens: sampling.maxTokens
+        ))
+        let response = try await transport(body)
 
-        let initialBudget = LocalModelCatalog.gemma4.completionTokenBudget
-        let initialCompletion = try await completion(
-            for: request,
-            maxTokens: initialBudget
-        )
-        if let translation = Self.translation(from: initialCompletion) {
-            return translation
-        }
-
-        if initialCompletion.finishReason == "length" {
-            let retryCompletion = try await completion(
-                for: request,
-                maxTokens: initialBudget + 1024
-            )
-            if let translation = Self.translation(from: retryCompletion) {
-                return translation
-            }
-            if retryCompletion.finishReason == "length" {
-                throw LocalModelTranslationError.outputBudgetExhausted
-            }
-        }
-
-        throw LocalModelTranslationError.emptyResponse
-    }
-
-    private func completion(
-        for request: TextTranslationRequest,
-        maxTokens: Int
-    ) async throws -> LocalChatCompletionResponse.Choice {
-        try validateEndpoint(configuration.endpoint)
-        var urlRequest = URLRequest(url: configuration.endpoint)
-        urlRequest.httpMethod = "POST"
-        urlRequest.timeoutInterval = 120
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue("Bearer lm-studio", forHTTPHeaderField: "Authorization")
-        urlRequest.httpBody = try JSONEncoder().encode(
-            LocalChatCompletionRequest(
-                model: configuration.model,
-                messages: [
-                    LocalChatMessage(
-                        role: "system",
-                        content: TranslationPromptBuilder.localSystemPrompt(for: request)
-                    ),
-                    LocalChatMessage(
-                        role: "user",
-                        content: TranslationPromptBuilder.localUserPrompt(for: request)
-                    )
-                ],
-                maxTokens: maxTokens
-            )
-        )
-
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: urlRequest, delegate: LocalModelNoRedirectDelegate.shared)
-        } catch let error as URLError where error.code == .timedOut {
-            throw LocalModelTranslationError.timeout
-        } catch {
-            throw LocalModelTranslationError.serviceUnavailable
-        }
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw LocalModelTranslationError.invalidResponse
-        }
-        guard (200..<300).contains(httpResponse.statusCode) else {
+        guard (200..<300).contains(response.status) else {
             let message = (try? JSONDecoder().decode(
                 LocalModelErrorResponse.self,
-                from: data
+                from: response.body
             ))?.error?.message
             throw LocalModelTranslationError.httpFailure(
-                statusCode: httpResponse.statusCode,
+                statusCode: response.status,
                 message: message
             )
         }
-
-        let decoded: LocalChatCompletionResponse
-        do {
-            decoded = try JSONDecoder().decode(
-                LocalChatCompletionResponse.self,
-                from: data
-            )
-        } catch {
+        guard let choice = (try? JSONDecoder().decode(
+            LocalChatCompletionResponse.self,
+            from: response.body
+        ))?.choices.first else {
             throw LocalModelTranslationError.invalidResponse
         }
-
-        guard let choice = decoded.choices.first else {
-            throw LocalModelTranslationError.invalidResponse
+        // 截断的半句话不交给写回层。
+        guard choice.finishReason != "length" else {
+            throw LocalModelTranslationError.outputBudgetExhausted
         }
-        return choice
-    }
-
-    private static func translation(
-        from choice: LocalChatCompletionResponse.Choice
-    ) -> String? {
-        guard choice.finishReason != "length" else { return nil }
-        let content = cleanTranslation(choice.message.content)
-        return content.isEmpty ? nil : content
-    }
-
-    private static func cleanTranslation(_ value: String) -> String {
-        var result = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if result.hasPrefix("<think>") {
-            guard let end = result.range(of: "</think>") else { return "" }
-            result.removeSubrange(result.startIndex..<end.upperBound)
-            result = result.trimmingCharacters(in: .whitespacesAndNewlines)
+        let translation = choice.message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !translation.isEmpty else {
+            throw LocalModelTranslationError.emptyResponse
         }
-        return result
+        return translation
     }
 }
 
 private struct LocalChatCompletionRequest: Encodable, Sendable {
-    let model: String
     let messages: [LocalChatMessage]
-    let temperature: Double = 0
-    let seed: Int = 42
+    let temperature: Double
+    let topP: Double
+    let topK: Int
+    let repeatPenalty: Double
     let maxTokens: Int
     let stream: Bool = false
 
     private enum CodingKeys: String, CodingKey {
-        case model
         case messages
         case temperature
-        case seed
+        case topP = "top_p"
+        case topK = "top_k"
+        case repeatPenalty = "repeat_penalty"
         case maxTokens = "max_tokens"
         case stream
     }
@@ -179,11 +125,9 @@ private struct LocalModelErrorResponse: Decodable, Sendable {
     }
 }
 
-enum LocalModelTranslationError: LocalizedError {
+enum LocalModelTranslationError: LocalizedError, Equatable {
     case emptySource
-    case serviceUnavailable
-    case untrustedService
-    case timeout
+    case modelNotInstalled
     case invalidResponse
     case emptyResponse
     case outputBudgetExhausted
@@ -194,12 +138,8 @@ enum LocalModelTranslationError: LocalizedError {
         return switch self {
         case .emptySource:
             strings.emptySource
-        case .serviceUnavailable:
-            strings.localModelServiceUnavailable
-        case .untrustedService:
-            strings.localModelServiceUntrusted
-        case .timeout:
-            strings.localModelTimeout
+        case .modelNotInstalled:
+            strings.localModelNotInstalled
         case .invalidResponse:
             strings.localModelInvalidResponse
         case .emptyResponse:

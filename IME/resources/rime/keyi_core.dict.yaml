@@ -1,0 +1,67 @@
+# KEYI 输入法核心短语补充
+# encoding: utf-8
+#
+# 这个小型词库只收录基础词库缺失或排序明显不自然的常用词，保证离线状态下
+# 也能给出稳定、自然的首选候选。权重高于基础词库的常用词，低于不可覆盖的
+# 高频单字。
+
+---
+name: keyi_core
+version: "1.0"
+sort: by_weight
+...
+
+你好	ni hao	1000000
+你好吗	ni hao ma	950000
+谢谢	xie xie	1000000
+谢谢你	xie xie ni	950000
+请问	qing wen	1000000
+什么	shen me	1000000
+为什么	wei shen me	1000000
+什么时候	shen me shi hou	900000
+怎么	zen me	1000000
+怎么样	zen me yang	950000
+这个	zhe ge	1000000
+那个	na ge	1000000
+哪个	na ge	900000
+我们	wo men	1000000
+你们	ni men	1000000
+他们	ta men	1000000
+可以	ke yi	1000000
+不可以	bu ke yi	800000
+知道	zhi dao	1000000
+不知道	bu zhi dao	900000
+不是	bu shi	950000
+没有	mei you	1000000
+现在	xian zai	1000000
+今天	jin tian	1000000
+明天	ming tian	1000000
+昨天	zuo tian	1000000
+时间	shi jian	1000000
+工作	gong zuo	1000000
+已经	yi jing	1000000
+应该	ying gai	1000000
+可能	ke neng	1000000
+需要	xu yao	1000000
+问题	wen ti	1000000
+一定	yi ding	950000
+因为	yin wei	1000000
+所以	suo yi	1000000
+但是	dan shi	1000000
+如果	ru guo	1000000
+还是	hai shi	950000
+或者	huo zhe	900000
+之后	zhi hou	950000
+之前	zhi qian	950000
+中国	zhong guo	1000000
+北京	bei jing	1000000
+上海	shang hai	1000000
+朋友	peng you	1000000
+谢谢大家	xie xie da jia	800000
+麻烦你	ma fan ni	850000
+不好意思	bu hao yi si	900000
+没关系	mei guan xi	900000
+辛苦了	xin ku le	800000
+加油	jia you	900000
+今天天气	jin tian tian qi	700000
+你好世界	ni hao shi jie	600000

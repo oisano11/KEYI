@@ -1,0 +1,23 @@
+# Rime dictionary for the KEYI macOS input method.
+# encoding: utf-8
+#
+# keyi_core is maintained by this project and keeps a small set of deliberate
+# ranking overrides. rime_ice is the vendored 雾凇拼音 full-pinyin corpus. The
+# old pinyin_simp table was removed on 2026-11-04; it had long left this chain.
+
+---
+name: keyi_pinyin
+version: "2.0"
+sort: by_weight
+max_phrase_length: 8
+import_tables:
+  - keyi_core
+  # Rime resolves import table names from the data root. Keep these paths
+  # explicit instead of importing the upstream index indirectly: this works
+  # with librime's compiler and keeps the vendored dataset self-contained.
+  - rime_ice/cn_dicts/8105
+  - rime_ice/cn_dicts/base
+  - rime_ice/cn_dicts/ext
+  - rime_ice/cn_dicts/tencent
+  - rime_ice/cn_dicts/others
+...

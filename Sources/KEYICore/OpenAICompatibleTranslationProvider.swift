@@ -26,23 +26,45 @@ public struct OpenAICompatibleTranslationProvider: TranslationProvider {
     private let endpoint: URL
     private let model: String
     private let session: URLSession
+    private let usageRecorder: (@Sendable (TranslationProviderID, APITokenUsage) -> Void)?
 
+    /// `usageRecorder` 收到每次成功返回里的 token 用量（统计费用用）；返回里没有 `usage` 时不调用。
     public init(
         configuration: APIProviderConfiguration,
-        session: URLSession = .shared
+        session: URLSession = .shared,
+        usageRecorder: (@Sendable (TranslationProviderID, APITokenUsage) -> Void)? = nil
     ) {
         id = configuration.providerID
         apiKey = configuration.apiKey
         endpoint = configuration.endpoint
         model = configuration.model
         self.session = session
+        self.usageRecorder = usageRecorder
     }
 
     public func translate(_ request: TextTranslationRequest) async throws -> String {
         guard !request.sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw APITranslationError.emptySource
         }
+        return try await complete(
+            system: TranslationPromptBuilder.systemPrompt(for: request),
+            user: TranslationPromptBuilder.userPrompt(for: request),
+            temperature: request.scene == .faithful ? 0 : 0.2
+        )
+    }
 
+    /// 个人术语表：请同一个大模型服务从这批「原文 → 译文」里挑出固定词对。用量照常记账。
+    public func extractGlossary(from samples: [PersonalGlossary.Sample]) async throws -> [(source: String, target: String)] {
+        guard !samples.isEmpty else { return [] }
+        let reply = try await complete(
+            system: PersonalGlossary.extractionSystemPrompt,
+            user: PersonalGlossary.extractionUserPrompt(samples),
+            temperature: 0
+        )
+        return PersonalGlossary.parseExtraction(reply)
+    }
+
+    private func complete(system: String, user: String, temperature: Double) async throws -> String {
         var urlRequest = URLRequest(url: endpoint)
         urlRequest.httpMethod = "POST"
         urlRequest.timeoutInterval = 45
@@ -52,20 +74,10 @@ public struct OpenAICompatibleTranslationProvider: TranslationProvider {
             ChatCompletionRequest(
                 model: model,
                 messages: [
-                    ChatMessage(
-                        role: "system",
-                        content: TranslationPromptBuilder.systemPrompt(
-                            for: request
-                        )
-                    ),
-                    ChatMessage(
-                        role: "user",
-                        content: TranslationPromptBuilder.userPrompt(
-                            for: request
-                        )
-                    )
+                    ChatMessage(role: "system", content: system),
+                    ChatMessage(role: "user", content: user)
                 ],
-                temperature: request.scene == .faithful ? 0 : 0.2
+                temperature: temperature
             )
         )
 
@@ -86,15 +98,20 @@ public struct OpenAICompatibleTranslationProvider: TranslationProvider {
             )
         }
 
-        let choice: ChatCompletionResponse.Choice?
+        let decoded: ChatCompletionResponse
         do {
-            choice = try JSONDecoder().decode(
-                ChatCompletionResponse.self,
-                from: data
-            ).choices.first
+            decoded = try JSONDecoder().decode(ChatCompletionResponse.self, from: data)
         } catch {
             throw APITranslationError.invalidResponse
         }
+        // 截断、空结果也照样计费，所以先记用量再判断。
+        if let usage = decoded.usage {
+            usageRecorder?(id, APITokenUsage(
+                inputTokens: usage.promptTokens ?? 0,
+                outputTokens: usage.completionTokens ?? 0
+            ))
+        }
+        let choice = decoded.choices.first
         guard choice?.finishReason != "length" else {
             throw APITranslationError.truncatedResponse(providerID: id)
         }
@@ -119,6 +136,17 @@ private struct ChatMessage: Codable, Sendable {
 
 private struct ChatCompletionResponse: Decodable, Sendable {
     let choices: [Choice]
+    let usage: Usage?
+
+    struct Usage: Decodable, Sendable {
+        let promptTokens: Int?
+        let completionTokens: Int?
+
+        private enum CodingKeys: String, CodingKey {
+            case promptTokens = "prompt_tokens"
+            case completionTokens = "completion_tokens"
+        }
+    }
 
     struct Choice: Decodable, Sendable {
         let message: ChatMessage

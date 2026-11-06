@@ -1,0 +1,214 @@
+{
+ "eval": [
+  {
+   "scene": "dailyChat",
+   "zh": "在吗？晚上一起吃个饭呗"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "哈哈哈笑死我了，这也太离谱了吧"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "不好意思，我刚看到消息，晚点回你"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "明天早上8点半在公司楼下集合，别迟到。"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "他这个人吧，说话老是阴阳怪气的，我也懒得理他。"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "行吧，那就按你说的来。"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "你到哪了？我们都到了，就差你了"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "别提了，今天倒霉透了，地铁坐过站，钱包还丢了"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "这周末有空吗？想约你去看个电影"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "我先去洗个澡，等会儿聊"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "听到这个消息，我难过得绷不住了"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "你也太卷了吧，周末还加班"
+  },
+  {
+   "scene": "socialMedia",
+   "zh": "绝了，这家店的火锅真的yyds！"
+  },
+  {
+   "scene": "socialMedia",
+   "zh": "今天终于把驾照考下来了，三年了，泪目"
+  },
+  {
+   "scene": "socialMedia",
+   "zh": "笑死，真绷不住了，我妈把我的猫当成狗在训"
+  },
+  {
+   "scene": "socialMedia",
+   "zh": "这游戏更新完bug比更新前还多，策划能不能长点心"
+  },
+  {
+   "scene": "socialMedia",
+   "zh": "求推荐适合新手的跑鞋，预算一千以内"
+  },
+  {
+   "scene": "socialMedia",
+   "zh": "说真的，打工人的快乐就是周五下午五点半"
+  },
+  {
+   "scene": "business",
+   "zh": "这个价格能再便宜点吗？我们打算长期合作，第一批先订500件。"
+  },
+  {
+   "scene": "business",
+   "zh": "请在本周五之前把合同发给我，付款方式按之前说好的30%预付。"
+  },
+  {
+   "scene": "business",
+   "zh": "报价又涨了20%，这也太离谱了。"
+  },
+  {
+   "scene": "business",
+   "zh": "样品已经寄出，单号是SF1234567890，预计周三到。"
+  },
+  {
+   "scene": "business",
+   "zh": "麻烦确认一下交货期，我们这边最晚下个月15号要收到货。"
+  },
+  {
+   "scene": "business",
+   "zh": "这批货有三箱外包装破损，请尽快安排补发或退款。"
+  },
+  {
+   "scene": "business",
+   "zh": "我觉得这个方案还有优化空间，比如说可以先做一个小范围的测试，看看用户反馈再决定要不要全面推广。"
+  },
+  {
+   "scene": "business",
+   "zh": "会议改到下周二下午两点，地点不变。"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "这个 bug 我查了一下午，最后发现是缓存没清。"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "你先别急，我帮你问问老王，他应该知道。"
+  },
+  {
+   "scene": "socialMedia",
+   "zh": "刚入手的新耳机，降噪效果一般般，有点后悔了"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "我靠，这也太贵了吧，抢钱啊"
+  }
+ ],
+ "holdout": [
+  {
+   "scene": "dailyChat",
+   "zh": "在吗，帮我个忙"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "我在楼下等你，快点下来"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "刚才坐过站了，可能要晚十分钟"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "大家都在等你，就差你了"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "她说话总是阴阳怪气的，听着就不舒服"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "一杯奶茶卖六十，这不是抢钱吗"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "收到，晚点回你"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "今天好累啊，不想动"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "你吃饭了没？"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "没事，慢慢来，不着急"
+  },
+  {
+   "scene": "socialMedia",
+   "zh": "这部剧太好看了，yyds"
+  },
+  {
+   "scene": "socialMedia",
+   "zh": "笑死，我家狗又把拖鞋叼走了"
+  },
+  {
+   "scene": "socialMedia",
+   "zh": "看完结局直接泪目"
+  },
+  {
+   "scene": "socialMedia",
+   "zh": "客服能不能长点心，问三遍都没解决"
+  },
+  {
+   "scene": "socialMedia",
+   "zh": "求推荐一款适合学生的笔记本电脑"
+  },
+  {
+   "scene": "business",
+   "zh": "请提供快递单号，方便我们跟踪"
+  },
+  {
+   "scene": "business",
+   "zh": "交货期能不能提前一周？"
+  },
+  {
+   "scene": "business",
+   "zh": "我们需要先支付多少预付款？"
+  },
+  {
+   "scene": "business",
+   "zh": "附件是本季度的报价单，请查收。"
+  },
+  {
+   "scene": "business",
+   "zh": "如有任何问题，请随时联系我。"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "小李明天请假，老张替他值班"
+  },
+  {
+   "scene": "dailyChat",
+   "zh": "笑死我了，他居然把盐当成糖"
+  }
+ ]
+}
