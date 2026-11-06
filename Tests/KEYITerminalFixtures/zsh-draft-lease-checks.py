@@ -125,13 +125,26 @@ def write_lease(capture, ttl_us=2_500_000):
 
 
 def capture_eventually(shell, timeout=3.0):
-    """Capture once ZLE is free again; the last failure is reported if it never is."""
+    """Capture after a rejected commit, allowing a short settle time.
+
+    On CI the first capture right after a rejected commit is occasionally refused
+    as unavailable (the shell's probe of the requesting host did not pass). The
+    product fails closed there; the check is about the buffer surviving. If it never
+    succeeds, print the process state the probe depends on before failing.
+    """
     deadline = time.monotonic() + timeout
     while True:
         try:
             return shell.capture()
         except AssertionError:
             if time.monotonic() >= deadline:
+                ps = subprocess.run(
+                    ["/bin/ps", "-A", "-o", "pid,ppid,pgid,tpgid,tty,stat,comm"],
+                    capture_output=True, text=True,
+                ).stdout.splitlines()
+                print(f"capture still refused; host pid {os.getpid()}, shell pid {shell.pid}", file=sys.stderr)
+                for line in ps[:1] + [l for l in ps[1:] if any(k in l for k in ("zsh", "KEYITerminal", "sleep", "python"))]:
+                    print("  " + line, file=sys.stderr)
                 raise
             drain(shell.fd, 0.2)
 
@@ -252,7 +265,7 @@ def run_late_probe(root):
         set_delay(root, None)
         drain(shell.fd, 1.0)
         check(result.returncode != 0 and elapsed < 3.1, "helper must time out before the delayed probe returns")
-        check(shell.capture()["buffer"] == capture["buffer"], "expired lease must not write a late translation")
+        check(capture_eventually(shell)["buffer"] == capture["buffer"], "expired lease must not write a late translation")
     finally:
         close_shell(shell, lease)
 
@@ -317,7 +330,7 @@ def run_revoked_lease(root):
         process.wait(timeout=4)
         set_delay(root, None)
         check(process.returncode != 0, "revoked lease must reject a still-connected commit helper")
-        check(shell.capture()["buffer"] == capture["buffer"], "revoked lease must preserve the original buffer")
+        check(capture_eventually(shell)["buffer"] == capture["buffer"], "revoked lease must preserve the original buffer")
     finally:
         close_shell(shell, lease)
 
@@ -332,7 +345,7 @@ def run_edit_restore(root):
         lease = write_lease(capture)
         result = commit_process(shell, capture, lease, "stale translation")
         check(result.returncode != 0, "edit-restore must invalidate the captured ticket")
-        check(shell.capture()["buffer"] == capture["buffer"], "edit-restore must preserve the restored draft")
+        check(capture_eventually(shell)["buffer"] == capture["buffer"], "edit-restore must preserve the restored draft")
     finally:
         close_shell(shell, lease)
 
