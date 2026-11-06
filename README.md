@@ -12,6 +12,55 @@
 
 > 不用复制，不用切换；在哪里输入，就在哪里翻译。
 
+## KEYI 输入法：用中文打字，直接打出英文
+
+**脑子里想的是中文，要写的是英文？** KEYI 输入法是一款开源免费的 **Mac 翻译输入法**：
+像平常一样用拼音打中文，按回车，屏幕上出现的就是英文。不用复制粘贴，不用打开翻译网页，
+不用按翻译快捷键，也不用切换输入法——**边打字边翻译，打中文自动出英文**。
+
+**KEYI Pinyin is a free, open-source AI translation keyboard for Mac.** Type Chinese in pinyin,
+press Return, and get natural English right where you type. No copy-paste, no translator tab,
+no hotkey — just translate as you type.
+
+### 三步上手
+
+1. **照常打拼音**：确认的中文先带下划线留在输入框里，光标旁的面板实时给出英文预览。
+2. **按回车出英文**：整段中文原位换成英文——只换文字，**绝不替你发送**。
+3. **想保留中文**：单按 Shift，中文原样上屏。
+
+### 为什么用 KEYI 输入法
+
+- **AI 翻译，地道不生硬**：选你要的英文——自然、正式商务、贴近原文，或者地道美式口语。
+- **本地翻译，隐私不外泄**：内置腾讯混元 Hy-MT2 本地翻译模型，下载后可离线中译英，文字不出你的 Mac；
+  需要口语风格时，再接你自己配置的大模型 API。输入法本身不联网、不碰你的密钥，密码框里一律不翻译。
+- **拼音输入本身就好用**：基于 Rime（librime）引擎与雾凇拼音（rime-ice）词库，中英混输顺手。
+- **开源免费**：代码、词库、构建脚本全在本仓库，可以自己审查、构建和修改。
+
+**适合谁**：和外国同事、客户实时聊天；写英文邮件、发推、回评论；外贸、跨境电商、
+远程工作、留学申请——所有「会想、但懒得逐句翻」的英文写作。
+
+**Great for:** chatting with English-speaking colleagues and clients, writing English emails and
+social posts, cross-border sales and remote work — anyone who thinks in Chinese but writes in
+English on macOS. Built on Rime (librime) and rime-ice, with on-device translation powered by
+Tencent Hunyuan Hy-MT2.
+
+> 实验版（Experimental）：目前只在作者本机日常使用，没有公证安装包，需要从源码构建（macOS 15+）。
+> 已在 macOS 15 上的微信、浏览器、终端等常见输入框中使用；其他应用可能有光标定位或回写差异。
+
+### 从源码构建与安装
+
+```sh
+Scripts/build-app.sh                      # KEYI 可译（翻译服务在它里面）
+IME/Scripts/build-ime.sh release          # 输入法
+IME/Scripts/install-ime.sh release        # 装到 ~/Library/Input Methods，不自动启用
+```
+
+然后在「系统设置 → 键盘 → 文字输入 → 编辑…」添加「简体中文 → KEYI 拼音」。用法、检查和
+词库许可见 [IME/README.md](IME/README.md)；雾凇拼音词库保留其上游 GPL-3.0 等许可，见
+[IME/THIRD_PARTY_NOTICES.md](IME/THIRD_PARTY_NOTICES.md)。
+
+## KEYI 可译：桌面快捷键翻译 / Desktop Translator
+
 KEYI is an open-source desktop translator for macOS and Windows. Select text, or place the cursor in an editable input field, press a global shortcut, and the translation is written back in the same app.
 
 KEYI 可译是 macOS 和 Windows 的桌面输入翻译工具。选中文字，或将光标留在可编辑输入框，按一次全局快捷键，即可翻译成目标语言并原地写回。
@@ -38,53 +87,6 @@ KEYI 可译是 macOS 和 Windows 的桌面输入翻译工具。选中文字，�
 4. KEYI translates the text and writes the result back without sending the message.
 
 中文：选中文字优先；没有选区时翻译当前输入框。翻译完成后直接写回原位置，不自动发送。
-
-## KEYI 输入法：Mac 上边打中文边翻译成英文的翻译输入法（实验）
-
-**KEYI Pinyin — a free, open-source Chinese-to-English translation input method for macOS.
-Type Chinese in pinyin, get English in place: translate as you type, no copy-paste, no hotkey.**
-
-想在 Mac 上**打中文自动出英文**？`IME/` 是 KEYI 自带的开源 macOS 中文拼音输入法
-**KEYIIME**（InputMethodKit + librime + 雾凇拼音词库）。像平常一样用拼音打字，确认的中文
-就会原位换成英文——不用复制粘贴、不用切到翻译网页、也不用按翻译快捷键。适合和外国同事、
-客户聊天，写英文邮件、发推、回评论，以及在微信、浏览器网页等输入框里中译英。
-
-怎么用：
-
-1. 用拼音正常输入，确认的中文先带下划线留在输入框里，光标旁的面板实时显示候选和中英对照预览。
-2. 整段写完按**回车**，整段换成英文上屏（只换英文、**不发送**，再按一次回车才由应用发送）。
-3. 想保留中文就**单按 Shift**，中文原样上屏、不翻译；密码框和安全输入里不翻译、不发请求。
-
-为什么选它：
-
-- **本地翻译、可离线**：自然、正式商务、贴近原文三种风格用 KEYI 自带的本地翻译模型
-  （腾讯混元 Hy-MT2，设置里下载），文字不出本机；需要地道美式口语时再接你配置的大模型 API。
-- **隐私边界清楚**：输入法进程本身不联网、不持有凭据，翻译由同仓库的 KEYI 可译在本机完成或转给你选的服务。
-- **好用的中文拼音底子**：基于 Rime / librime 引擎与雾凇拼音（rime-ice）词库，支持中英混输。
-- **开源免费**：源码、脚本、Rime 方案与词库都在本仓库，可以自己构建、审查和修改。
-
-现状：实验版，只在作者本机日常使用；没有公证的安装包，需要从源码构建；真实应用里以 macOS 15
-上的微信、浏览器、终端等常见输入框为主，其他应用可能有光标定位或回写差异。
-
-**In English:** KEYI Pinyin is a macOS pinyin IME built on Rime (librime) with the rime-ice
-dictionary. After you confirm Chinese characters, KEYI translates the whole sentence into English
-and replaces it in place when you press Return — it never sends the message for you. Translation
-can run fully on-device with a bundled local model (Tencent Hunyuan Hy-MT2), or through an
-LLM API you configure. Useful for chatting with English speakers, writing English emails and
-social posts, or anyone who thinks in Chinese but needs to write in English on a Mac.
-Experimental; build from source (macOS 15+).
-
-从源码构建与安装（需要 macOS 15+）：
-
-```sh
-Scripts/build-app.sh                      # KEYI 可译（翻译服务在它里面）
-IME/Scripts/build-ime.sh release          # 输入法
-IME/Scripts/install-ime.sh release        # 装到 ~/Library/Input Methods，不自动启用
-```
-
-然后在「系统设置 → 键盘 → 文字输入 → 编辑…」添加「简体中文 → KEYI 拼音」。用法、检查和
-词库许可见 [IME/README.md](IME/README.md)；雾凇拼音词库保留其上游 GPL-3.0 等许可，见
-[IME/THIRD_PARTY_NOTICES.md](IME/THIRD_PARTY_NOTICES.md)。
 
 ## Quick Start / 快速开始
 
