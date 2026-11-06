@@ -183,38 +183,6 @@ public enum APITranslationProviderCatalog {
     }
 }
 
-public struct LocalModelProfile: Equatable, Sendable {
-    public let defaultEndpoint: String
-    public let defaultModel: String
-    public let defaultLoadKey: String
-    public let completionTokenBudget: Int
-    public let idleTTLSeconds: Int
-
-    public init(
-        defaultEndpoint: String,
-        defaultModel: String,
-        defaultLoadKey: String,
-        completionTokenBudget: Int,
-        idleTTLSeconds: Int
-    ) {
-        self.defaultEndpoint = defaultEndpoint
-        self.defaultModel = defaultModel
-        self.defaultLoadKey = defaultLoadKey
-        self.completionTokenBudget = completionTokenBudget
-        self.idleTTLSeconds = idleTTLSeconds
-    }
-}
-
-public enum LocalModelCatalog {
-    public static let gemma4 = LocalModelProfile(
-        defaultEndpoint: "http://127.0.0.1:1234/v1/chat/completions",
-        defaultModel: "keyi-gemma4",
-        defaultLoadKey: "gemma-4-12b-it",
-        completionTokenBudget: 1024,
-        idleTTLSeconds: 180
-    )
-}
-
 public enum TranslationScene: String, CaseIterable, Codable, Identifiable, Sendable {
     case automatic
     case dailyChat

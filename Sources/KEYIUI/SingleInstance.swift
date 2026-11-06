@@ -27,6 +27,11 @@ final class InstanceLock {
 public enum KEYILauncher {
     public static func run() {
         let logger = Logger(subsystem: "com.keyi.input-translator", category: "Lifecycle")
+        // 服务进程分支：带 --keyi-translation-service 启动时只跑翻译服务循环，
+        // 不进入单实例判定，也不创建菜单栏 UI。
+        if KEYITranslationServiceEntry.runIfRequested() {
+            return
+        }
         do {
             let directory = try FileManager.default.url(
                 for: .applicationSupportDirectory, in: .userDomainMask,

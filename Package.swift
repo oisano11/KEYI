@@ -2,13 +2,24 @@
 
 import PackageDescription
 
+// 翻译服务线协议与客户端在共享包 Packages/KEYITranslationClient，
+// KEYI 拼音输入法（IME/ 包）依赖同一个包，两边不再各自复制。
+let translationClient: Target.Dependency = .product(
+    name: "KEYITranslationClient",
+    package: "KEYITranslationClient"
+)
+
 let package = Package(
     name: "KEYI",
     platforms: [
         .macOS(.v15)
     ],
     products: [
-        .executable(name: "KEYI", targets: ["KEYI"])
+        .executable(name: "KEYI", targets: ["KEYI"]),
+        .executable(name: "KEYITerminal", targets: ["KEYITerminal"])
+    ],
+    dependencies: [
+        .package(path: "Packages/KEYITranslationClient")
     ],
     targets: [
         .target(
@@ -16,8 +27,13 @@ let package = Package(
             exclude: ["SPEC.md"]
         ),
         .target(
+            name: "KEYITranslationService",
+            dependencies: ["KEYICore", translationClient],
+            exclude: ["SPEC.md"]
+        ),
+        .target(
             name: "KEYIUI",
-            dependencies: ["KEYICore"],
+            dependencies: ["KEYICore", translationClient, "KEYITranslationService"],
             path: "Sources/KEYIUI",
             exclude: ["SPEC.md", "Writeback-SPEC.md", "LocalModel-SPEC.md"],
             swiftSettings: [
@@ -44,14 +60,38 @@ let package = Package(
             path: "Tests/KEYICoreChecks"
         ),
         .executableTarget(
+            name: "KEYITerminal",
+            dependencies: ["KEYICore", "KEYIUI"],
+            path: "Sources/KEYITerminal",
+            linkerSettings: [
+                .linkedFramework("AppKit"),
+                .linkedFramework("Translation")
+            ]
+        ),
+        .executableTarget(
+            name: "KEYITerminalChecks",
+            dependencies: ["KEYICore"],
+            path: "Tests/KEYITerminalChecks"
+        ),
+        .executableTarget(
+            name: "KEYITranslationServiceCLI",
+            dependencies: ["KEYIUI", "KEYITranslationService", translationClient],
+            path: "Sources/KEYITranslationServiceCLI"
+        ),
+        .executableTarget(
             name: "KEYIAppChecks",
-            dependencies: ["KEYIUI"],
+            dependencies: ["KEYIUI", "KEYITranslationService", translationClient],
             path: "Tests/KEYIAppChecks"
         ),
         .executableTarget(
             name: "KEYIRegressionChecks",
             dependencies: ["KEYIUI"],
             path: "Tests/KEYIRegressionChecks"
+        ),
+        .executableTarget(
+            name: "KEYIAppleTranslationProbe",
+            dependencies: ["KEYICore", translationClient, "KEYITranslationService", "KEYIUI"],
+            path: "Tests/KEYIAppleTranslationProbe"
         )
     ]
 )

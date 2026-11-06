@@ -1,0 +1,152 @@
+# Rime schema for the KEYI macOS input method.
+# encoding: utf-8
+#
+# Simplified full Pinyin. The active dictionary chain uses the vendored
+# 雾凇拼音 (rime-ice) corpus plus KEYI's small ranking overrides. The upstream
+# notices and source licences are shipped alongside the data under RimeData.
+
+schema:
+  schema_id: keyi_pinyin
+  name: KEYI 拼音
+  version: "2.2"
+  # 英文词表随本方案一起部署（中英混输）。
+  dependencies:
+    - keyi_english
+
+switches:
+  - name: ascii_mode
+    reset: 0
+    states: [ 中文, ABC ]
+  - name: full_shape
+    reset: 0
+    states: [ 半角, 全角 ]
+
+engine:
+  processors:
+    - key_binder
+    - speller
+    - punctuator
+    - selector
+    - navigator
+    - express_editor
+  segmentors:
+    - ascii_segmentor
+    - abc_segmentor
+    - punct_segmentor
+    - fallback_segmentor
+  translators:
+    - punct_translator
+    - script_translator
+    # 中英混输：打完整英文单词时，英文单词和拼音候选合在一页。
+    - table_translator@keyi_english
+
+speller:
+  alphabet: zyxwvutsrqponmlkjihgfedcba
+  delimiter: " '"
+  algebra:
+    - derive/^([nl])ue$/$1ve/
+    - derive/^([jqxy])u/$1v/
+    - derive/un$/uen/
+    - derive/ui$/uei/
+    - derive/iu$/iou/
+    # 首字母简拼：xz → xian zai → 现在；zh/ch/sh 仍按完整声母处理。
+    - abbrev/^([a-z]).+$/$1/
+    - abbrev/^([zcs]h).+$/$1/
+    # 保留正确拼音，同时派生常见模糊音。
+    - fuzz/^([zcs])h/$1/
+    - fuzz/eng$/en/
+    - fuzz/ing$/in/
+    # 相邻字母倒置或少按一键的容错。
+    - derive/([aeiou])ng$/$1gn/
+    - derive/ong$/on/
+    - derive/ao$/oa/
+    - derive/([iu])a(o|ng?)$/a$1$2/
+
+translator:
+  dictionary: keyi_pinyin
+  user_dict: keyi_user
+  prism: keyi_pinyin
+  enable_completion: true
+  enable_word_completion: true
+  enable_sentence: true
+  enable_user_dict: true
+  enable_encoder: true
+  max_word_length: 7
+  max_sentences: 3
+  strict_spelling: true
+  preedit_format:
+    - xform/([nl])v/$1ü/
+    - xform/([nl])ue/$1üe/
+    - xform/([jqxy])v/$1u/
+    # 拼音之间不显示自动分隔的空格：打 model 时显示 model，不是 mo de l。
+    - xform/ //
+
+keyi_english:
+  dictionary: keyi_english
+  enable_sentence: false
+  enable_user_dict: false
+  enable_completion: false
+  initial_quality: 1.1
+  comment_format:
+    - xform/.*//
+
+punctuator:
+  half_shape:
+    "!": "！"
+    "?": "？"
+    ",": "，"
+    ".": "。"
+    ":": "："
+    ";": "；"
+    "\\": "、"
+    # 斜杠直接上屏，终端里打 /model 这类命令不用再选；顿号用反斜杠。
+    "/": "/"
+    "_": "——"
+    "-": [ "-", "—", "–" ]
+    "<": "《"
+    ">": "》"
+    "(": "（"
+    ")": "）"
+    "[": [ "【", "「" ]
+    "]": [ "】", "」" ]
+    "{": "｛"
+    "}": "｝"
+    "\"": { pair: [ "“", "”" ] }
+    "'": { pair: [ "‘", "’" ] }
+    "@": "@"
+    "#": "#"
+    "$": "￥"
+    "%": "%"
+    "&": "&"
+    "*": "*"
+    "+": "+"
+    "=": "="
+  full_shape:
+    "!": "！"
+    "?": "？"
+    ",": "，"
+    ".": "。"
+    ":": "："
+    ";": "；"
+    "\\": "＼"
+    "/": "／"
+    "_": "＿"
+    "-": "－"
+    "<": "＜"
+    ">": "＞"
+    "(": "（"
+    ")": "）"
+    "[": "［"
+    "]": "］"
+    "{": "｛"
+    "}": "｝"
+    "\"": { pair: [ "“", "”" ] }
+    "'": { pair: [ "‘", "’" ] }
+    "@": "＠"
+    "#": "＃"
+    "$": "＄"
+    "%": "％"
+    "&": "＆"
+    "*": "＊"
+    "+": "＋"
+    "=": "＝"

@@ -1,5 +1,6 @@
 import Foundation
 import KEYICore
+import KEYITranslationClient
 
 enum InterfaceLanguageStorage {
     static let key = "interface.language"
@@ -59,7 +60,6 @@ struct InterfaceStrings: Sendable {
     var scene: String { isEnglish ? "Context" : "使用场景" }
     var style: String { isEnglish ? "Style" : "表达风格" }
     var interfaceLanguage: String { isEnglish ? "Language" : "界面语言" }
-    var apiManagement: String { isEnglish ? "Translation Services" : "翻译服务" }
     var localModel: String { isEnglish ? "Local Model" : "本地模型" }
     var hotKey: String { isEnglish ? "Keyboard Shortcut" : "快捷键" }
     var hotKeySettings: String {
@@ -76,15 +76,14 @@ struct InterfaceStrings: Sendable {
     var unavailable: String { isEnglish ? "Unavailable" : "待接入" }
     var automatic: String { isEnglish ? "Automatic" : "自动" }
     var simplifiedChinese: String { isEnglish ? "Simplified Chinese" : "简体中文" }
-    var english: String { "English" }
+    var english: String { isEnglish ? "English" : "英语" }
     var save: String { isEnglish ? "Save" : "保存" }
     var cancel: String { isEnglish ? "Cancel" : "取消" }
     var apiKey: String { "API Key" }
     var endpoint: String { "Endpoint" }
     var model: String { isEnglish ? "Model" : "模型" }
-    var savedLeaveBlank: String {
-        isEnglish ? "Saved; leave blank to keep it" : "已保存，留空保持不变"
-    }
+    var savedAPIKeyMasked: String { isEnglish ? "Saved ••••" : "已保存 ••••" }
+    var replaceAPIKey: String { isEnglish ? "Replace" : "更换" }
     var pasteAPIKey: String { isEnglish ? "Paste API Key" : "粘贴 API Key" }
     var hotKeyWaiting: String { isEnglish ? "Waiting for input..." : "等待输入..." }
     var hotKeyRequiresModifier: String {
@@ -153,9 +152,6 @@ struct InterfaceStrings: Sendable {
         isEnglish ? "\(label): \(value)" : "\(label)：\(value)"
     }
 
-    func currentProvider(_ provider: TranslationProviderID) -> String {
-        menuLabel(current, value: providerName(provider))
-    }
 
     func target(_ language: TranslationLanguage) -> String {
         menuLabel(targetLanguage, value: languageName(language))
@@ -173,85 +169,20 @@ struct InterfaceStrings: Sendable {
         menuLabel(interfaceLanguage, value: interfaceLanguageName(value))
     }
 
-    func localModelValue(_ name: String) -> String {
-        menuLabel(localModel, value: name)
-    }
 
-    func serviceValue(_ endpoint: String) -> String {
-        menuLabel(isEnglish ? "Service" : "服务", value: endpoint)
-    }
 
-    func sceneStyleHint(
-        supportsScene: Bool,
-        supportsStyle: Bool,
-        scene: TranslationScene
-    ) -> String {
-        if !supportsScene {
-            return isEnglish
-                ? "Context and style are available with model services"
-                : "使用场景和表达风格仅适用于模型服务"
-        }
-        if !supportsStyle {
-            switch scene {
-            case .business:
-                return isEnglish
-                    ? "Business prioritizes accuracy; style is unavailable"
-                    : "商务优先准确，不使用表达风格"
-            case .faithful:
-                return isEnglish
-                    ? "Faithful mode keeps the source; style is unavailable"
-                    : "贴近原文，不使用表达风格"
-            default:
-                return isEnglish
-                    ? "Context supports all languages; style applies to English"
-                    : "使用场景适用于全部目标语言；表达风格仅适用于英语"
-            }
-        }
-        return ""
-    }
 
-    var apiStorageInfo: String {
-        isEnglish
-            ? "API Key is stored in this macOS user's private KEYI folder; Endpoint and model are stored in local settings."
-            : "API Key 仅保存到当前 macOS 用户的 KEYI 私有目录；Endpoint 和模型名保存到本机设置。"
-    }
 
-    func configureAPI(_ provider: TranslationProviderID) -> String {
-        isEnglish
-            ? "Configure \(providerName(provider)) API"
-            : "配置 \(providerName(provider)) API"
-    }
 
-    func saveAPIFailed(_ provider: TranslationProviderID, detail: String) -> String {
-        isEnglish
-            ? "Could not save \(providerName(provider)) API: \(detail)"
-            : "保存 \(providerName(provider)) API 失败：\(detail)"
-    }
 
-    var configureLocalModel: String {
-        isEnglish ? "Local Model" : "本地设置"
-    }
 
-    var localModelInfo: String {
-        isEnglish
-            ? "No API key is required. The 12B model loads on first use and unloads after 3 minutes idle."
-            : "无需 API Key。首次翻译会自动加载 12B 模型；闲置 3 分钟后自动卸载并释放内存。"
-    }
 
-    var saveLocalModelFailedPrefix: String {
-        isEnglish ? "Could not save local model settings: " : "保存本地模型配置失败："
-    }
 
     var unsupportedProvider: String {
         isEnglish ? "This provider does not support API configuration" : "当前提供方不支持 API 配置"
     }
     var invalidEndpoint: String {
         isEnglish ? "Endpoint must be a valid HTTPS URL" : "Endpoint 必须是有效的 HTTPS 地址"
-    }
-    var invalidLocalEndpoint: String {
-        isEnglish
-            ? "Local Endpoint must be an HTTP address on localhost or 127.0.0.1"
-            : "本地 Endpoint 必须是 localhost 或 127.0.0.1 的 HTTP 地址"
     }
     var missingAPIKey: String { isEnglish ? "API Key is required" : "API Key 不能为空" }
     var missingModel: String { isEnglish ? "Model name is required" : "模型名不能为空" }
@@ -274,65 +205,58 @@ struct InterfaceStrings: Sendable {
     func configureProviderFirst(_ provider: String) -> String {
         isEnglish ? "Set up \(provider) first" : "请先配置 \(provider)"
     }
-    var noFocusedWindow: String {
-        isEnglish ? "No recently used input window found" : "没有找到最近使用的输入窗口"
-    }
-    var readingInput: String { isEnglish ? "Reading current input" : "正在读取当前输入框" }
-    func usingProvider(_ provider: String) -> String {
-        isEnglish ? "Translating with \(provider)" : "正在使用 \(provider) 翻译"
-    }
-    var writingInput: String { isEnglish ? "Writing to current input" : "正在写回当前输入框" }
-    var translationComplete: String { isEnglish ? "Translation complete" : "翻译完成" }
-    func selectedProvider(_ provider: String) -> String {
-        isEnglish ? "Using \(provider)" : "正在使用 \(provider)"
-    }
-    func savedProvider(_ provider: String) -> String {
-        isEnglish ? "Saved \(provider)" : "已保存 \(provider)"
-    }
-    func hotKeyUpdated(_ value: String) -> String {
-        isEnglish ? "Keyboard shortcut updated to \(value)" : "快捷键已更新为 \(value)"
-    }
-    func hotKeyUnavailable(_ value: String) -> String {
-        isEnglish
-            ? "Keyboard shortcut \(value) could not be registered; another app may be using it."
-            : "快捷键 \(value) 无法注册，可能已被其他应用占用。"
-    }
-    var saveHotKeyFailed: String {
-        isEnglish
-            ? "Could not save the keyboard shortcut or restore the previous one. Set it again in Settings."
-            : "保存快捷键失败，且原快捷键恢复失败，请重新设置"
-    }
     var hotKeyRegistrationFailed: String {
         isEnglish ? "Global keyboard shortcut registration failed; set it again in Settings."
             : "全局快捷键注册失败，请在设置中重新设置"
     }
-    func fallbackHotKey(_ value: String) -> String {
-        isEnglish ? "The previous keyboard shortcut was unavailable; restored \(value)" : "原快捷键不可用，已恢复 \(value)"
-    }
-    var timeoutOrCancelled: String {
-        isEnglish ? "Translation timed out or was cancelled" : "翻译请求超时或已取消"
-    }
-    var operationFailed: String { isEnglish ? "Operation failed" : "操作失败" }
 
     var credentialInvalidAccount: String { isEnglish ? "Invalid credential name" : "凭据名称无效" }
     var credentialWriteFailed: String { isEnglish ? "Could not save API Key" : "API Key 保存失败" }
 
-    var localRuntimeUnavailable: String {
-        isEnglish ? "LM Studio command not found; install LM Studio first" : "未找到 LM Studio 命令，请先安装 LM Studio"
+    func localModelInsufficientDiskSpace(_ size: String) -> String {
+        isEnglish ? "Not enough disk space; the download needs \(size) free" : "磁盘空间不足，下载需要 \(size) 可用空间"
+    }
+    var localModelChecksumMismatch: String {
+        isEnglish ? "The downloaded model failed verification; try again" : "下载的模型校验失败，请重试"
+    }
+    var localModelUnreachable: String {
+        isEnglish ? "The local model service is not running" : "本地模型服务没有运行"
+    }
+    var localModelHelperMissing: String {
+        isEnglish ? "The bundled model runtime is missing; reinstall KEYI" : "缺少自带的模型运行组件，请重新安装 KEYI"
+    }
+    var localModelRunDirectoryUnsafe: String {
+        isEnglish ? "The local model run folder is not private to this user" : "本地模型运行目录不属于当前用户"
+    }
+    var localModelServerFailed: String {
+        isEnglish ? "The local model stopped repeatedly; check the model in Settings" : "本地模型连续启动失败，请在设置里检查模型"
+    }
+    func localModelDownloadStatus(_ status: Int) -> String {
+        isEnglish ? "Model download failed (HTTP \(status))" : "模型下载失败（HTTP \(status)）"
     }
     var localModelNotInstalled: String {
-        isEnglish ? "Gemma 4 12B is not installed; download or load it in LM Studio" : "本机未找到 Gemma 4 12B，请在 LM Studio 下载或加载该模型"
-    }
-    var localServiceUnavailable: String {
-        isEnglish ? "LM Studio local service could not start; enable Local Server in LM Studio" : "LM Studio 本地服务未能启动，请在 LM Studio 中开启 Local Server"
-    }
-    var localModelServiceUnavailable: String {
-        isEnglish ? "Local model service is not running; check LM Studio" : "本地模型服务未启动，请确认 LM Studio 可用"
-    }
-    var localModelServiceUntrusted: String {
         isEnglish
-            ? "Local service identity could not be verified. Use the signed LM Studio desktop app in Applications; standalone runtimes are not supported."
-            : "无法确认本地服务身份。请使用“应用程序”中的已签名 LM Studio 桌面版；暂不支持独立运行时。"
+            ? "The local model is not downloaded; download it in Settings → Translation → Local Model"
+            : "本地模型还没下载，请在 设置 → 翻译 → 本地模型 里下载"
+    }
+    var localModelLicense: String {
+        isEnglish ? "Model license: Apache-2.0" : "模型许可：Apache-2.0"
+    }
+    var localModelMigrationNotice: String {
+        isEnglish
+            ? "Local Model now uses KEYI's built-in Hy-MT2; switched back to Apple Translation"
+            : "本地模型已改为 KEYI 自带的 Hy-MT2，已切回苹果系统翻译"
+    }
+    func localModelDownloading(_ done: String, _ total: String) -> String {
+        isEnglish ? "Downloading \(done) / \(total)" : "下载中 \(done) / \(total)"
+    }
+    var localModelLoading: String { isEnglish ? "Loading model…" : "正在加载模型…" }
+    var localModelReady: String { isEnglish ? "Model ready" : "模型已就绪" }
+    func localModelTierSummary(_ tier: LocalTranslationModelTier) -> String {
+        switch tier {
+        case .light: isEnglish ? "Light · literal translation" : "轻量 · 只直译"
+        case .standard: isEnglish ? "Standard · follows scene and style" : "标准 · 按场景和风格翻译"
+        }
     }
     var localModelTimeout: String {
         isEnglish ? "The local model timed out while loading or translating" : "本地模型首次加载或翻译超时"
@@ -370,13 +294,33 @@ struct InterfaceStrings: Sendable {
         isEnglish ? "The current input field does not support in-place replacement" : "当前输入框不支持原地替换"
     }
     var terminalSelectionRequired: String {
-        isEnglish ? "Terminal: select the text to translate first" : "终端命令：请先选中要翻译的内容，再触发翻译"
+        isEnglish
+            ? "This terminal does not expose a verifiable editable draft; the original text was left unchanged."
+            : "当前终端未提供可验证的可编辑草稿接口，原文未改。"
+    }
+    var terminalEditorRequired: String {
+        isEnglish
+            ? "This terminal does not expose a verifiable editable draft; the original text was left unchanged."
+            : "当前终端未提供可验证的可编辑草稿接口，原文未改。"
+    }
+    var terminalDraftEditor: String {
+        isEnglish ? "New Terminal Translation Draft…" : "通用翻译草稿…"
+    }
+    var terminalDraftEditorUnavailable: String {
+        isEnglish ? "The terminal draft helper is unavailable. Reinstall the complete KEYI app." : "无法打开草稿工具，请重新安装完整的 KEYI 可译应用。"
+    }
+    var terminalDraftGuide: String {
+        isEnglish ? "Terminal draft bridge guide" : "终端草稿桥使用说明"
     }
     var unsafeTerminalTranslation: String {
-        isEnglish ? "The terminal translation contains line breaks or control characters; replacement cancelled" : "终端译文包含换行或控制字符，已取消替换"
+        isEnglish
+            ? "The terminal replacement contains unsupported control characters; replacement cancelled"
+            : "终端译文包含不支持的控制字符，已取消替换"
     }
     var terminalWriteFailed: String {
-        isEnglish ? "The terminal command could not safely replace the text" : "终端命令未能安全替换，已停止写入"
+        isEnglish
+            ? "Could not verify or safely complete the terminal update. Check the current draft before continuing."
+            : "终端内容的写回状态无法确认，请检查当前草稿后再继续。"
     }
     var terminalRecoveryRequired: String {
         isEnglish
@@ -414,54 +358,83 @@ struct InterfaceStrings: Sendable {
 
     var settings: String { isEnglish ? "Settings..." : "设置..." }
     var settingsTitle: String { isEnglish ? "Settings" : "设置" }
-    var translationTab: String { isEnglish ? "Translation" : "翻译" }
-    var providersTab: String { isEnglish ? "Services" : "翻译服务" }
-    var hotKeyTab: String { isEnglish ? "Shortcuts" : "快捷键" }
-    var generalTab: String { isEnglish ? "General" : "通用" }
-    var translationPreferencesDescription: String {
+    var translationStyle: String { isEnglish ? "Translation Style" : "翻译风格" }
+    /// 卡片里的示例译文：同一句中文按各风格的写法，手写的示例，不是实时翻译。
+    func translationStyleExample(_ style: KEYITranslationStyle) -> String {
+        switch style {
+        case .natural: "I really can’t get this done today — let’s pick it up tomorrow."
+        case .business: "I won’t be able to complete this today. Could we revisit it tomorrow?"
+        case .faithful: "I really can’t handle this today; let’s talk about it tomorrow."
+        case .americanCasual: "No way I’m getting this done today. Let’s circle back tomorrow."
+        case .blackAmerican: "Ain’t no way I’m finishing this today — we can get to it tomorrow."
+        case .british: "I honestly can’t get this sorted today — shall we leave it till tomorrow?"
+        }
+    }
+    var desktopHotKey: String { isEnglish ? "Desktop Shortcut" : "桌面快捷键" }
+    func localModelTierShort(_ tier: LocalTranslationModelTier) -> String {
+        switch tier {
+        case .light: isEnglish ? "Light" : "轻量档"
+        case .standard: isEnglish ? "Standard" : "标准档"
+        }
+    }
+    var localEngineMissing: String {
         isEnglish
-            ? "Choose the language and writing preferences for your translations."
-            : "设置译文语言，以及模型服务的表达偏好。"
+            ? "These 3 styles need Hy-MT2, which isn't downloaded yet. Apple Translation stands in until it is."
+            : "这 3 种风格要用 Hy-MT2，还没下载；下载好之前暂用苹果翻译。"
     }
-    var systemTranslationOptionsInfo: String {
+    var cloudEngineMissing: String {
         isEnglish
-            ? "System Translation uses the language you choose and keeps its own writing behavior."
-            : "系统翻译会使用所选语言，并由系统决定表达方式。"
+            ? "These 3 styles need an LLM API key. Until you add one, they translate in the Natural style."
+            : "这 3 种风格要用大模型 API，还没填 Key；填好之前按「自然」翻。"
     }
-    var translationServicesDescription: String {
-        isEnglish
-            ? "Set up the services available for translation."
-            : "配置可用于翻译的服务。"
+    var styleExampleSource: String { "这事我今天真搞不定了，明天再说吧。" }
+    func localModelTierName(_ tier: LocalTranslationModelTier) -> String {
+        switch tier {
+        case .light: isEnglish ? "Light" : "轻量"
+        case .standard: isEnglish ? "Standard" : "标准"
+        }
     }
-    var localModelEndpointPlaceholder: String {
-        "http://127.0.0.1:1234/v1/chat/completions"
+    func downloadTierLabel(_ name: String) -> String {
+        isEnglish ? "\(name) · Download" : "\(name) · 下载"
     }
-    var localModelPlaceholder: String {
-        isEnglish ? "Model identifier in LM Studio" : "LM Studio 中的模型标识"
+    func deleteLocalModelTier(_ tier: String, _ size: String) -> String {
+        isEnglish ? "Delete \(tier) model (\(size))" : "删除\(tier)模型（\(size)）"
     }
+    var accessibilityShort: String { isEnglish ? "Accessibility" : "辅助功能" }
+    var advancedSettings: String { isEnglish ? "Advanced" : "高级" }
+    /// 风格旁边显示的引擎：本机模型写模型名，大模型 API 写服务名。
+    func engineName(_ provider: TranslationProviderID) -> String {
+        switch provider {
+        case .localModel: "Hy-MT2"
+        case .appleSystem: isEnglish ? "Apple Translation" : "苹果翻译"
+        default: providerName(provider)
+        }
+    }
+    var engineNeedsAPIKey: String { isEnglish ? "needs API key" : "需 API Key" }
+    func translationStyleName(_ style: KEYITranslationStyle) -> String {
+        isEnglish ? style.englishName : style.chineseName
+    }
+    func translationStyleSummary(_ style: KEYITranslationStyle) -> String {
+        isEnglish ? style.englishSummary : style.chineseSummary
+    }
+    /// 首页两组风格的组名和隐私说明。
+    var localStylesGroup: String { isEnglish ? "On This Mac" : "本机翻译" }
+    var cloudStylesGroup: String { isEnglish ? "LLM API" : "大模型 API" }
+    var downloadLocalModelButton: String { isEnglish ? "Download" : "下载" }
+    var addAPIKey: String { isEnglish ? "Add API Key…" : "填写 API Key…" }
     var shortcutsDescription: String {
         isEnglish
             ? "Use a keyboard shortcut to translate text in the current app."
             : "使用全局快捷键翻译当前应用中的文本。"
     }
-    var generalSettingsDescription: String {
-        isEnglish
-            ? "Manage the app language and required macOS access."
-            : "管理界面语言和 KEYI 所需的 macOS 权限。"
+    var moreMenu: String { isEnglish ? "More" : "更多" }
+    func localModelDownloadingMenu(_ percent: Int) -> String {
+        isEnglish ? "Downloading local model… \(percent)%" : "正在下载本地模型… \(percent)%"
     }
     var savedHint: String { isEnglish ? "Saved" : "已保存" }
-    var useAsCurrent: String { isEnglish ? "Use for Translation" : "用于翻译" }
-    var currentlyUsed: String { isEnglish ? "Used for Translation" : "正在用于翻译" }
-    var providerConfiguredSuffix: String { isEnglish ? "Configured" : "已配置" }
     var providerNotConfiguredLabel: String { isEnglish ? "Not configured" : "未配置" }
-    var cloudProviderSection: String {
-        isEnglish ? "Cloud Services" : "云端翻译服务"
-    }
-    var localModelSectionLabel: String {
-        isEnglish ? "Local model (LM Studio)" : "本地模型（LM Studio）"
-    }
-    var accessibilityPermissionSection: String {
-        isEnglish ? "Accessibility permission" : "辅助功能权限"
+    func menuValue(_ title: String, _ value: String) -> String {
+        isEnglish ? "\(title): \(value)" : "\(title)：\(value)"
     }
     var accessibilityGranted: String {
         isEnglish ? "Granted" : "已授权"
@@ -499,4 +472,116 @@ extension APITranslationError {
             )
         }
     }
+}
+
+/// 按设计稿重做的设置三页（翻译风格、统计、高级）与菜单栏的文案。
+extension InterfaceStrings {
+    // MARK: 翻译风格页
+
+    var styleQuestion: String { isEnglish ? "What kind of English do you want?" : "想要什么样的英文？" }
+    var styleIntro: String { isEnglish ? "Pick a style; KEYI decides which model to use." : "选一种风格，KEYI 自己决定用哪个模型。" }
+    var sampleSourceLabel: String { isEnglish ? "Sample" : "示例原文" }
+    func localGroupDetail(_ engine: String) -> String {
+        isEnglish ? "\(engine) · text stays on this Mac" : "\(engine) · 文字不出本机"
+    }
+    func cloudGroupDetail(_ engine: String) -> String {
+        isEnglish ? "\(engine) · only the text being translated is sent" : "\(engine) · 只发送这一段待译文字"
+    }
+    /// 风格卡片底部的一句用途说明。
+    func styleCardNote(_ style: KEYITranslationStyle) -> String {
+        switch style {
+        case .natural: isEnglish ? "Default · everyday chat" : "默认 · 日常聊天"
+        case .business: isEnglish ? "Email, work messages" : "邮件、工作沟通"
+        case .faithful: isEnglish ? "One-to-one meaning, no polish" : "意思一对一，不润色"
+        case .americanCasual: isEnglish ? "Like an American coworker" : "像美国同事那样说"
+        case .blackAmerican: isEnglish ? "No swearing unless the original has it" : "原文没有粗口就不加"
+        case .british: isEnglish ? "How Brits say it" : "英国人的说法"
+        }
+    }
+    func targetLanguageFooter(_ language: String) -> String {
+        isEnglish
+            ? "Target language: \(language). If the LLM service isn't set up, KEYI uses Natural instead and tells you once."
+            : "目标语言：\(language)。大模型服务没配好时，会先用「自然」代替并告诉你一次。"
+    }
+    var changeInAdvanced: String { isEnglish ? "Change in Advanced" : "在高级里修改" }
+
+    // MARK: 高级页
+
+    var targetLanguageDetail: String { isEnglish ? "The language translations are written in." : "译文写成哪种语言。" }
+    var languageLabel: String { isEnglish ? "Language" : "语言" }
+    var appearanceSection: String { isEnglish ? "Appearance" : "外观" }
+    var themeLabel: String { isEnglish ? "Theme" : "主题" }
+    var themeDetail: String { isEnglish ? "Light and dark follow the system appearance." : "亮色、暗色跟随系统外观自动切换。" }
+    func themeName(_ theme: KEYITheme) -> String { isEnglish ? theme.englishName : theme.chineseName }
+    var localModelRowDetail: String {
+        isEnglish
+            ? "Light (1.13 GB) favours speed; Standard (1.91 GB) reads better."
+            : "轻量（1.13 GB）速度优先；标准（1.91 GB）质量更好。"
+    }
+    var localModelInUse: String { isEnglish ? "In use" : "正在使用" }
+    var cloudServiceDetail: String {
+        isEnglish
+            ? "Used by Casual American, Black American Casual and British Casual. It only receives the text being translated."
+            : "美式、黑人英语、英式口语用它。只收到这一段待译文字。"
+    }
+    var generalSection: String { isEnglish ? "General" : "通用" }
+    var dictionaryRowDetail: String {
+        isEnglish
+            ? "Checked once a week; you're told what changed before anything is installed. The input method itself never goes online."
+            : "每周检查一次上游，发现新版先说明再问你。输入法本身不联网。"
+    }
+    var dictionaryReview: String { isEnglish ? "Review update…" : "查看新版…" }
+
+    // MARK: 统计页
+
+    var statsConfirmedHanzi: String { isEnglish ? "Confirmed characters" : "确认汉字" }
+    var statsEnglishWords: String { isEnglish ? "English words sent" : "上屏英文词" }
+    var statsLLMTokens: String { isEnglish ? "LLM tokens" : "大模型 tokens" }
+    var statsEstimatedCost: String { isEnglish ? "Estimated API cost" : "API 估算费用" }
+    var statsWeekChart: String { isEnglish ? "Confirmed characters, last 7 days" : "近 7 天确认汉字" }
+    func statsDailyAverage(_ value: String) -> String { isEnglish ? "Daily avg \(value)" : "日均 \(value)" }
+    var statsCostAndPrices: String { isEnglish ? "Cost and prices" : "费用与单价" }
+    var statsEditPrices: String { isEnglish ? "Edit prices" : "改单价" }
+    var statsDoneEditing: String { isEnglish ? "Done" : "完成" }
+    var statsServiceColumn: String { isEnglish ? "Service" : "服务" }
+    var statsPerMillionColumn: String { isEnglish ? "Per M tokens" : "每百万 tokens" }
+    var statsFree: String { isEnglish ? "Free" : "免费" }
+    var statsTodayTotal: String { isEnglish ? "Today, total" : "今天合计" }
+    var statsWordsUnit: String { isEnglish ? "words" : "个词" }
+    func statsAppSpread(_ count: Int) -> String { isEnglish ? "across \(count) apps" : "分在 \(count) 个 App" }
+    var statsCostNote: String {
+        isEnglish ? "Estimated from the token usage each service reports; fill in your relay's own price." : "按服务返回的 token 用量估算；中转站可自填单价。"
+    }
+    var statsDailyDetails: String { isEnglish ? "Daily details" : "每日明细" }
+    var statsUserDictionaryDetail: String {
+        isEnglish
+            ? "Learned on this Mac, offline. Learned per app: words you picked in an app move to the front of the page next time."
+            : "本机自学习，不联网。按 App 分开学：同一个 App 里选过的词，下次排在前面。"
+    }
+
+    // MARK: 菜单栏
+
+    var menuServiceRunning: String { isEnglish ? "Translation service running" : "翻译服务运行中" }
+    var menuLocalModelLoaded: String { isEnglish ? "local model loaded" : "本地模型已加载" }
+    var menuLocalModelLoading: String { isEnglish ? "local model loading" : "本地模型加载中" }
+    var menuLocalModelMissing: String { isEnglish ? "local model not downloaded" : "本地模型未下载" }
+    var menuLocalModelFailed: String { isEnglish ? "local model failed to load" : "本地模型加载失败" }
+    var menuLocalModelIdle: String { isEnglish ? "local model idle" : "本地模型待命" }
+    var menuTodayHanzi: String { isEnglish ? "Characters today" : "今天确认汉字" }
+    var menuEstimatedCost: String { isEnglish ? "Estimated API cost" : "API 估算费用" }
+    var quitApp: String { isEnglish ? "Quit KEYI" : "退出 KEYI 可译" }
+
+    // MARK: 词库更新对话框
+
+    var dictionarySheetTitle: String { isEnglish ? "New rime-ice dictionary" : "雾凇拼音有新词库" }
+    func dictionarySheetVersions(_ to: KEYIDictionaryUpdate.Version, _ from: KEYIDictionaryUpdate.Version?) -> String {
+        let new = isEnglish ? to.date.formatted(date: .long, time: .omitted) : chineseDate(to.date)
+        guard let from else { return isEnglish ? "Version \(new)" : "\(new)版" }
+        let old = isEnglish ? from.date.formatted(date: .long, time: .omitted) : chineseDate(from.date)
+        return isEnglish ? "Version \(new) · current \(old)" : "\(new)版 · 当前 \(old)版"
+    }
+    var dictionaryAddedLabel: String { isEnglish ? "Words added" : "新增词条" }
+    var dictionaryRemovedLabel: String { isEnglish ? "Words removed" : "删除词条" }
+    var dictionaryAddedSamples: String { isEnglish ? "New words, e.g." : "新词示例" }
+    var dictionaryRemovedSamples: String { isEnglish ? "Removed, e.g." : "删除示例" }
 }

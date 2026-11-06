@@ -1,0 +1,14 @@
+# Rime defaults for the KEYI input method.
+# encoding: utf-8
+
+config_version: "1.0"
+
+schema_list:
+  - schema: keyi_pinyin
+
+menu:
+  page_size: 7
+
+switcher:
+  hotkeys:
+    - F4
