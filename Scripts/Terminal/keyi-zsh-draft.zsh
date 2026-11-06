@@ -72,6 +72,11 @@ function __keyi_zsh_draft_reply_open {
 function __keyi_zsh_draft_reply_write {
     local __keyi_reply_fd="$1"
     local __keyi_reply_text="$2"
+    # Without job control the subshell stays in this shell's process group.
+    # With it, zsh makes the subshell the terminal's foreground group for its
+    # lifetime, and a capture arriving right after this reply is refused
+    # because the shell is not in the foreground.
+    setopt localoptions no_monitor
     # A vanished reader can raise SIGPIPE. Isolate the bounded nonblocking
     # write in a subshell so the interactive shell itself cannot be killed.
     ( syswrite -o "$__keyi_reply_fd" "$__keyi_reply_text"$'\n' 2>/dev/null )
@@ -140,6 +145,8 @@ function __keyi_zsh_draft_line_finish {
 }
 
 function __keyi_zsh_draft_cleanup {
+    # Keep the unregister helper in this shell's process group (see reply_write).
+    setopt localoptions no_monitor
     if [[ -n $__keyi_zsh_draft_request_fd ]]; then
         zle -F "$__keyi_zsh_draft_request_fd" 2>/dev/null
         { exec {__keyi_zsh_draft_request_fd}>&-; } 2>/dev/null
