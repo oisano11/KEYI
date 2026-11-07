@@ -74,6 +74,19 @@ API 配置，否则为 nil；`localProvider` 在用户没选过 Hy-MT2 档位时
 未安装的 Apple 语言对必须抛错并映射成 `unavailableProvider`，不能返回原文 —— 返回原文会被当成
 「翻译成功」直接写回用户文档。
 
+## 语音识别转发（2026-11-07）
+
+`TranslationServiceServer` 可选注入 `SpeechTranscriptionProviding`（KEYIUI 的 `KEYISpeechTranscriptionProvider`）。
+连接上来 `transcribe` 时问宿主：宿主每次现读设置与 Keychain，没选云端（阿里云或豆包）或没填 Key 抛 `notConfigured`，服务端回
+`error` 并关连接；接下时先回 `transcriptStarted`（还没连上云端就回，输入法不用等网络），之后 `audio` 原样转给
+云端会话，云端的整段文字回 `transcript`，定稿回 `result`、出错回 `error`（Key 被拒是 `notConfigured`，断网、
+云端报错、没回应、豆包握手被拒（多半没开通或额度用完）是 `providerError`），然后关连接。连接断开（输入法取消、松开前离开输入框）就取消云端会话。
+一个连接只识别一段；不占翻译的并发名额。阿里云客户端在 KEYICore `AliyunFunASRStream`（WebSocket 双工：
+run-task → task-started 后送二进制音频 → finish-task → task-finished，按 sentence_id 拼整段）；豆包客户端在 KEYICore
+`DoubaoASRStream`（流式语音识别 2.0，`bigmodel_async`，`X-Api-Key` 鉴权；二进制帧：4 字节头 + 大端长度 + 负载，
+先发 JSON 参数包（开二遍识别），再一包包发 PCM，最后一包标志 0b0010；回包 `result.text` 是整段，带最后标志的回包即定稿，
+0b1111 错误帧报错误码；手里总扣着最新一包，好在松开时给它打上最后标志）。
+
 ## 进程生命周期
 
 服务随 KEYI 可译退出而终止（`stop()` 直接 `terminate()`）。子进程的 stdout/stderr 都指向

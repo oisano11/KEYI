@@ -4,9 +4,10 @@ import SwiftUI
 
 // 设置「高级」页：目标语言、本地模型档位与下载、大模型服务与 Key、外观（主题与磨砂）、词库更新。
 
-/// 「高级」按关系分三组，一项一行（2026-11-05 用户：「每个功能开关如果有相关关系，可以放到一组里……
+/// 「高级」按关系分四组，一项一行（2026-11-05 用户：「每个功能开关如果有相关关系，可以放到一组里……
 /// 要紧凑高效」）：
 /// - 翻译：目标语言、本机模型、大模型服务与 Key、个人术语表——都是「译文怎么来」。
+/// - 语音输入：识别引擎（本机 SenseVoice / 阿里云 Fun-ASR / 豆包语音识别）与所选云端的 Key，阿里云另有服务地址（2026-11-07）。
 /// - 外观：主题；一个磨砂滑块（2026-11-05 由透明度、模糊度合成）。
 /// - 通用：界面语言、桌面快捷键、辅助功能、拼音词库——设一次就不动的。
 /// 每行只留名称、一句短注和控件，长说明放进悬停提示。
@@ -52,6 +53,11 @@ struct AdvancedPage: View {
                 CloudServiceInline(model: model)
                 SettingsDivider()
                 PersonalGlossaryRow(model: model)
+            }
+
+            SettingsSectionTitle(strings.speechSection)
+            SettingsGroup {
+                SpeechServiceRows(model: model)
             }
 
             SettingsSectionTitle(strings.appearanceSection)

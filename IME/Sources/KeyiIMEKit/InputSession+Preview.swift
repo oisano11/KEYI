@@ -15,6 +15,8 @@ extension InputSession {
         session: InputSession?
     ) {
         DispatchQueue.main.async { [weak session] in
+            // 语音输入时面板归「正在听…」；对照等说完再出来（`restorePanelAfterDictation`）。
+            if session?.isDictating == true { return }
             if source.isEmpty {
                 KeyiTranslationPreviewPanel.hideForSession(owner: owner)
             } else if let session {
@@ -63,16 +65,18 @@ extension InputSession {
         }
     }
 
-    /// Draws the marked text: held sentences + the pinyin Rime is editing. The
-    /// selection sits inside the pinyin (offset by the held length) or at the end.
+    /// Draws the marked text: held sentences + the pinyin Rime is editing (or, while
+    /// dictating, the text being recognized). The selection sits inside the pinyin
+    /// (offset by the held length) or at the end.
     func redrawMarked(client: any IMKTextInput) {
         needsRedraw = false
         let held = automaticTranslation.heldText
-        let text = held + currentPreedit
+        let live = dictationLiveText
+        let text = held + currentPreedit + live
         let heldLength = held.utf16count
         defer {
             drawnHeldText = held
-            if !held.isEmpty {
+            if !held.isEmpty || !live.isEmpty {
                 compositionClient = client
             } else if currentPreedit.isEmpty {
                 compositionClient = nil
@@ -80,7 +84,7 @@ extension InputSession {
         }
         guard !text.isEmpty || hasMarkedText else { return }
         let length = text.utf16count
-        let caret = currentPreedit.isEmpty
+        let caret = currentPreedit.isEmpty || !live.isEmpty
             ? length
             : heldLength + min(max(candidateCursor, 0), currentPreedit.utf16count)
         // Once the client holds our marked text, the update must replace exactly
@@ -91,7 +95,7 @@ extension InputSession {
             replacementRange: client.markedRange()
         )
         hasMarkedText = !text.isEmpty
-        if !held.isEmpty {
+        if !held.isEmpty || !live.isEmpty {
             updatePreviewAnchor(client: client, length: length)
             scheduleAnchorRecheck(client: client)
         }
@@ -120,7 +124,7 @@ extension InputSession {
             return
         }
         let before = (previewCaretRect, compositionStartRect)
-        let length = (automaticTranslation.heldText + currentPreedit).utf16count
+        let length = (automaticTranslation.heldText + currentPreedit + dictationLiveText).utf16count
         updatePreviewAnchor(client: client, length: length)
         guard before != (previewCaretRect, compositionStartRect) else { return }
         Self.logger.info("caret moved after layout; re-anchoring the panel")

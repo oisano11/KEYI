@@ -814,4 +814,6 @@ expect(personalGlossary.pendingCount == 0, "提炼一次即删除暂存的整句
 personalGlossary.clear()
 expect(personalGlossary.terms.isEmpty && personalGlossary.isEnabled, "清空删词条、开关不变")
 
+checkCount += try await runAliyunFunASRChecks()
+checkCount += try await runDoubaoASRChecks()
 print("KEYICore checks passed: \(checkCount)")

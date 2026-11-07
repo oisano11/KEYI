@@ -153,6 +153,45 @@ if CommandLine.arguments.contains("--diagnose-session-translation") {
     runTranslationSessionDiagnostics()
 }
 
+// The bundled SenseVoice recognizer (the same one as holding right Option) on an audio
+// file instead of the microphone: `--diagnose-dictation-file <audio> <expected>`.
+if let flag = CommandLine.arguments.firstIndex(of: "--diagnose-dictation-file") {
+    guard CommandLine.arguments.indices.contains(flag + 2) else {
+        reportFailure("--diagnose-dictation-file needs an audio file and the expected text")
+    }
+    let audio = URL(fileURLWithPath: CommandLine.arguments[flag + 1])
+    let expected = CommandLine.arguments[flag + 2]
+    switch KeyiDictationDiagnostics.transcribe(file: audio) {
+    case let .transcribed(text, seconds):
+        print("dictation (\(String(format: "%.2f", seconds)) s including the model load): \(text)")
+        guard text.contains(expected) else {
+            reportFailure("dictation did not contain \(expected)")
+        }
+        print("PASS: bundled SenseVoice transcribes the sample")
+    case let .failed(reason):
+        reportFailure("dictation failed: \(reason)")
+    }
+    exit(EXIT_SUCCESS)
+}
+
+// Holding right Option picks the cloud (through KEYI 可译's translation service) or the
+// bundled SenseVoice: a fake service on a temporary socket and a file instead of the
+// microphone. `--diagnose-cloud-dictation <audio> <expected>`.
+if let flag = CommandLine.arguments.firstIndex(of: "--diagnose-cloud-dictation") {
+    guard CommandLine.arguments.indices.contains(flag + 2) else {
+        reportFailure("--diagnose-cloud-dictation needs an audio file and the expected text")
+    }
+    let outcome = KeyiCloudDictationDiagnostics.run(
+        file: URL(fileURLWithPath: CommandLine.arguments[flag + 1]),
+        expected: CommandLine.arguments[flag + 2]
+    )
+    outcome.passes.forEach { print("PASS: \($0)") }
+    if let failure = outcome.failure {
+        reportFailure("cloud dictation: \(failure)")
+    }
+    exit(EXIT_SUCCESS)
+}
+
 guard
     let connectionName = Bundle.main.object(
         forInfoDictionaryKey: "InputMethodConnectionName"

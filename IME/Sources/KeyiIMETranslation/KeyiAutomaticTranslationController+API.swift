@@ -133,6 +133,16 @@ extension KeyiAutomaticTranslationController {
     }
   }
 
+  /// 浮层回到此刻的状态（语音输入说完或取消后，面板由会话交还）：失败说明、上次预览，或收起。
+  /// 返回此刻浮层是否在显示；false 时会话自己收起面板。
+  @discardableResult
+  public func restoreOverlay() -> Bool {
+    onQueue {
+      restoreOverlayLocked()
+      return overlayShown
+    }
+  }
+
   /// 组合键等必须马上交给应用的提交：暂存文字按中文上屏，取消所有请求。
   /// 改动在返回前同步交给 `sink`。
   public func commitHeldAsChinese() {

@@ -25,6 +25,12 @@ final class KeyiCompositionPanel {
         var source: String
         var translation: String?
         var hint: KeyiAutomaticTranslationHint
+        /// 按住右 ⌥ 说话中：译文那行写「正在听…」，底栏写松开结束。
+        var listening = false
+        /// 说话中底栏右边写的识别引擎（如「本机 SenseVoice」「阿里云 Fun-ASR」）。
+        var listeningEngine: String?
+        /// 云端识别：引擎名用大模型 API 的颜色。
+        var listeningCloud = false
     }
 
     private static let logger = Logger(
@@ -106,7 +112,7 @@ final class KeyiCompositionPanel {
     }
 
     func showPreview(_ value: Preview, caretRect: NSRect, startRect: NSRect = .zero, owner: UUID) {
-        guard !value.source.isEmpty else {
+        guard !value.source.isEmpty || value.listening else {
             hidePreview(owner: owner)
             return
         }
@@ -316,7 +322,10 @@ final class KeyiCompositionContentView: NSView {
             previewView.update(
                 source: preview.source,
                 translation: preview.translation,
-                hint: preview.hint
+                hint: preview.hint,
+                listening: preview.listening,
+                listeningEngine: preview.listeningEngine,
+                listeningCloud: preview.listeningCloud
             )
             // 有对照时宽度跟着这次输入的候选行走（只剩对照时沿用它），至少 360；译文在这个宽度里换行。
             width = min(max(width, rememberedCandidateWidth ?? 0, Self.previewMinimumWidth), maxWidth)

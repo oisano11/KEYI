@@ -1,7 +1,8 @@
 # KEYI 输入法第三方组件与许可
 
-本输入法携带语言引擎、输入必需的数据，以及 KEYI 自动翻译的**线协议客户端**。
-客户端本身不含 AI 模型、模型权重、自动更新组件，也不在本进程内联网：确认中文后
+本输入法携带语言引擎、输入必需的数据、语音输入用的本地识别模型（SenseVoice-Small 与 sherpa-onnx
+运行库，只在按住右 ⌥ 说话时加载），以及 KEYI 自动翻译的**线协议客户端**。
+翻译客户端本身不含翻译模型、自动更新组件，整个输入法也不在本进程内联网：确认中文后
 它通过本机 AF_UNIX socket 调用用户自行安装并配置的「KEYI 可译」伴随应用，
 由后者按用户已选的提供方完成翻译。翻译提供方、语言与凭据仍由伴随应用管理，
 不在本输入法内。
@@ -19,6 +20,9 @@
 | SCOWL 英文词表（中英混输） | 10/20/35/40 级常用英文词，生成 `RimeData/english/scowl.dict.yaml` | SCOWL 2020.12.07（Kevin Atkinson），http://wordlist.aspell.net/ | 允许使用、修改、分发、出售，须保留版权声明（随包 `RimeData/english/LICENSE.scowl`） |
 | 雾凇拼音英文补充词表 | 缩写与技术词 `RimeData/english/en_ext.dict.yaml` | https://github.com/iDvel/rime-ice，commit 同上 | GPL-3.0 |
 | 雾凇拼音配置许可 | 随包 `RimeData/LICENSE.rime-ice-GPL-3.0` | 上游仓库的配置/方案许可原文，版本固定为上述 commit | GPL-3.0 |
+| SenseVoice-Small（语音输入识别模型） | 按住右 ⌥ 说话时把普通话（含中英混说）转成文字，随包为 `Contents/Resources/SenseVoice/model.int8.onnx` 与 `tokens.txt` | 阿里 FunAudioLLM https://github.com/FunAudioLLM/SenseVoice ；sherpa-onnx 转换的 int8 版 `sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2`（k2-fsa/sherpa-onnx `asr-models` 发布），SHA-256 `7d1efa21…dfd347e` | FunASR 模型开源协议 1.1（可使用、复制、修改、分享，须注明来源与作者并保留模型名；原文随包 `SenseVoice/MODEL_LICENSE`） |
+| sherpa-onnx | 运行 SenseVoice 的推理库，随包为 `Contents/Frameworks/libsherpa-onnx-c-api.dylib`，运行时 `dlopen` | https://github.com/k2-fsa/sherpa-onnx v2.0.1，发布档 `sherpa-onnx-v2.0.1-osx-arm64-shared.tar.bz2`，SHA-256 `5e874d3c…edb69f84`；C API 头文件随源码在 `Vendor/sherpa-onnx/include` | Apache-2.0（随包 `licenses/sherpa-onnx-Apache2.txt`） |
+| ONNX Runtime | sherpa-onnx 依赖的推理运行时，随包为 `Contents/Frameworks/libonnxruntime.dylib` | 随上述 sherpa-onnx 发布档（1.28.2） | MIT（随包 `licenses/onnxruntime-MIT.txt`） |
 | KEYI 自动翻译客户端 | 线协议客户端与自动翻译控制器（`Sources/KeyiIMETranslation/`）：确认中文后经本机 AF_UNIX socket 请求伴随应用翻译 | 本项目编写；协议实现从 KEYI 可译同源复制，未改写 | Apache-2.0（随 KEYI 发布许可） |
 | KEYI 自有词库与 schema | `keyi_core.dict.yaml`、`keyi_pinyin*.yaml`、`default.yaml` | 本项目编写，schema 规则改编自 Ni 上游 schema、Rime 官方示例及雾凇拼音输入约定 | Apache-2.0（随 KEYI 发布许可），其中改编部分同时适用上游 MIT/GPL 条款 |
 
@@ -74,6 +78,6 @@ KEYI 只引入雾凇拼音的全拼词库文件，不引入它的 Lua 插件、O
 - `ni_supplement.dict.yaml`、`emoji.dict.yaml`、`symbols.dict.yaml`、
   `candidate_regression.tsv`
 - CC-CEDICT 衍生释义（CC BY-SA 4.0）
-- 上游 AI 候选、股票、定位、朗读、Sparkle 软件更新与本地模型运行时
+- 上游 AI 候选、股票、定位、朗读、Sparkle 软件更新与翻译模型运行时（语音输入的 SenseVoice 见上表）
 
 `Scripts/verify-bundle.sh` 对上述内容逐项断言不存在于产物中。
