@@ -50,6 +50,10 @@ final class KeyiTranslationPreviewContentView: NSView {
     private var hintKind = KeyiAutomaticTranslationHint.enterConverts
     private var style = KEYITranslationStyle.natural
     private var engineLabel: String?
+    /// 按住右 ⌥ 说话中（语音输入）。
+    private var listening = false
+    private var listeningEngine: String?
+    private var listeningCloud = false
 
     // 紧凑尺寸（11-05 照苹果拼音收紧，设计稿第 23 版）：上下 6、左右 10，标签列 20、到文字 6，两行间 2；
     // 底栏上 5、下 6。面板宽度由候选行决定（见 `KeyiCompositionContentView`）。
@@ -95,11 +99,17 @@ final class KeyiTranslationPreviewContentView: NSView {
     func update(
         source: String,
         translation: String?,
-        hint: KeyiAutomaticTranslationHint
+        hint: KeyiAutomaticTranslationHint,
+        listening: Bool = false,
+        listeningEngine: String? = nil,
+        listeningCloud: Bool = false
     ) {
         self.source = source
         self.translation = translation
         hintKind = hint
+        self.listening = listening
+        self.listeningEngine = listeningEngine
+        self.listeningCloud = listeningCloud
         style = KEYITranslationStyle.stored() ?? .natural
         engineLabel = KEYITranslationStyle.storedEngineLabels()[style]
         needsDisplay = true
@@ -137,6 +147,7 @@ final class KeyiTranslationPreviewContentView: NSView {
     }
 
     private var translationDisplay: String {
+        if listening { return "正在听…" }
         if let translation, !translation.isEmpty { return translation }
         return hintKind.isFailed ? "翻译失败" : "翻译中…"
     }
@@ -172,7 +183,8 @@ final class KeyiTranslationPreviewContentView: NSView {
     }
 
     private func sourceString(color: NSColor) -> NSAttributedString {
-        KeyiMixedType.string(source, size: Self.sourceSize, color: color)
+        // 刚按下、还没识别出字时留一行空白，面板高度不跳。
+        KeyiMixedType.string(source.isEmpty ? "\u{3000}" : source, size: Self.sourceSize, color: color)
     }
 
     private var translationFontInUse: NSFont {
@@ -186,7 +198,10 @@ final class KeyiTranslationPreviewContentView: NSView {
     /// 此刻按回车会做什么：等英文时、翻译失败后，回车都是「保留中文」。单按 Shift（或 Esc）随时保留中文。
     /// 文案照契约原文（翻译失败与等英文同一句，2026-11-04 用户：「统一成「再按」」），按键名画成键帽。
     private var hintParts: [HintPart] {
-        switch hintKind {
+        if listening {
+            return [.text("说完松开"), .key("右 ⌥"), .separator, .text("按其他键取消")]
+        }
+        return switch hintKind {
         case .enterConverts:
             [.key("回车"), .text("换英文（\(style.chineseName)）"), .separator, .key("Shift"), .text("保留中文")]
         case .waiting, .failed:
@@ -196,6 +211,7 @@ final class KeyiTranslationPreviewContentView: NSView {
 
     /// 提示栏右端：这次用的引擎名（Hy-MT2、DeepSeek 等），前面一个本机色或 API 色圆点。
     private var engineDisplay: String? {
+        if listening { return listeningEngine ?? KeyiDictationEngineInfo.localName }
         guard let engineLabel, !engineLabel.isEmpty else { return nil }
         return engineLabel
     }
@@ -269,7 +285,8 @@ final class KeyiTranslationPreviewContentView: NSView {
         y += sourceHeight + Self.rowSpacing
 
         // 「EN」行：本机风格用强调色，大模型风格用 API 色，失败用危险色。
-        let engineColor = style.usesCloud ? tokens.api.nsColor : tokens.accent.nsColor
+        let usesAPIColor = listening ? listeningCloud : style.usesCloud
+        let engineColor = usesAPIColor ? tokens.api.nsColor : tokens.accent.nsColor
         let labelColor = isFailed ? tokens.danger.nsColor : engineColor
         let rowHeight = translationHeight(width: available)
         drawLabel("EN", color: labelColor, firstLineFont: translationFontInUse, y: y)

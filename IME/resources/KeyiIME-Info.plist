@@ -77,6 +77,8 @@
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>按住右 ⌥ 说话时，KEYI 输入法用麦克风把你说的话转成文字。默认在本机识别；你在 KEYI 可译里选了云端识别时，按住期间的声音经 KEYI 可译发给所选的服务商。声音不保存。</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>TICapsLockLanguageSwitchCapable</key>

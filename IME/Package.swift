@@ -34,6 +34,12 @@ let package = Package(
         .package(path: "../Packages/KEYITranslationClient"),
     ],
     targets: [
+        // 语音输入的本地识别（sherpa-onnx C API）：只用头文件里的类型，不链接；
+        // 运行时从包里的 Contents/Frameworks 用 dlopen 加载（见 KeyiSenseVoice.swift）。
+        .systemLibrary(
+            name: "CSherpaOnnx",
+            path: "Vendor/sherpa-onnx"
+        ),
         .target(
             name: "KeyiIMECore",
             cxxSettings: [
@@ -88,6 +94,7 @@ let package = Package(
         .target(
             name: "KeyiIMEKit",
             dependencies: [
+                "CSherpaOnnx",
                 "KeyiIMEBridge",
                 "KeyiIMEInputController",
                 "KeyiIMETranslation",
@@ -99,6 +106,7 @@ let package = Package(
             ],
             linkerSettings: [
                 .linkedFramework("AppKit"),
+                .linkedFramework("AVFoundation"),
                 .linkedFramework("InputMethodKit"),
                 .linkedFramework("OSLog"),
             ]

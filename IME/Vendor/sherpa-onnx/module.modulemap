@@ -1,0 +1,7 @@
+// Header-only module: the sherpa-onnx C API types. KEYIIME does not link the library;
+// it loads Contents/Frameworks/libsherpa-onnx-c-api.dylib with dlopen when the user
+// first holds right Option, so builds and the other targets never need the dylib.
+module CSherpaOnnx [system] {
+    header "include/sherpa-onnx/c-api/c-api.h"
+    export *
+}

@@ -73,5 +73,19 @@ KEYI_IME_USER_DATA_DIR="$TRANSLATION_DIAGNOSTICS_USER_DIR" \
     KEYI_IME_DIAGNOSTIC_FAKE_TRANSLATION=1 \
     "$PROJECT_ROOT/.build/KEYIIME.staged/Contents/MacOS/KEYIIME" --diagnose-session-translation
 
+# The bundled SenseVoice recognizer (holding right Option) on a synthesized sample instead
+# of the microphone. Skips only when there is no Chinese system voice to make the sample.
+DICTATION_SAMPLE="$RIME_USER_DIR/dictation-sample"
+if say -v Tingting -o "$DICTATION_SAMPLE.aiff" "今天下午三点我们在会议室讨论一下新版本的发布计划" 2>/dev/null \
+    && afconvert -f WAVE -d LEI16@16000 -c 1 "$DICTATION_SAMPLE.aiff" "$DICTATION_SAMPLE.wav" >/dev/null 2>&1; then
+    "$PROJECT_ROOT/.build/KEYIIME.staged/Contents/MacOS/KEYIIME" \
+        --diagnose-dictation-file "$DICTATION_SAMPLE.wav" "会议室"
+    # Cloud or local for one recording: a fake translation service on a temporary socket.
+    "$PROJECT_ROOT/.build/KEYIIME.staged/Contents/MacOS/KEYIIME" \
+        --diagnose-cloud-dictation "$DICTATION_SAMPLE.wav" "会议室"
+else
+    echo "SKIP: bundled SenseVoice (no Chinese system voice to make a sample)"
+fi
+
 echo
 echo "All checks passed."

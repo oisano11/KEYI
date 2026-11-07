@@ -96,17 +96,27 @@ public enum TranslationServiceMessageType: String, Codable, Sendable {
     case cancel
     case status
     case ping
+    /// 语音识别（2026-11-07）：一个连接一段录音。先发 `transcribe`（带 `sampleRate`），
+    /// 再连续发 `audio`（`audio` 是 16 位小端单声道 PCM 的 base64），最后发 `finishAudio`。
+    case transcribe
+    case audio
+    case finishAudio
     // 事件
     case result
     case error
     case cancelled
     case serviceStatus
     case pong
+    /// 服务接下了这段语音识别；`message` 是识别引擎的显示名。
+    case transcriptStarted
+    /// 到此刻为止整段的识别文字（`text`），会被后面的整段覆盖。语音识别的终止事件仍是
+    /// `result`（`text` 为定稿）或 `error`。
+    case transcript
 
     public var isRequest: Bool {
         switch self {
-        case .translate, .cancel, .status, .ping: true
-        case .result, .error, .cancelled, .serviceStatus, .pong: false
+        case .translate, .cancel, .status, .ping, .transcribe, .audio, .finishAudio: true
+        case .result, .error, .cancelled, .serviceStatus, .pong, .transcriptStarted, .transcript: false
         }
     }
 }
@@ -140,6 +150,10 @@ public struct TranslationServiceMessage: Codable, Sendable {
     public var message: String?
     public var providerIDs: [String]?
     public var selectedProviderID: String?
+    /// 语音识别：一帧 16 位小端单声道 PCM 的 base64（`audio`）。
+    public var audio: String?
+    /// 语音识别：采样率（`transcribe`）。
+    public var sampleRate: Int?
 
     public init(
         version: Int = TranslationServiceProtocol.version,
@@ -156,7 +170,9 @@ public struct TranslationServiceMessage: Codable, Sendable {
         code: TranslationServiceErrorCode? = nil,
         message: String? = nil,
         providerIDs: [String]? = nil,
-        selectedProviderID: String? = nil
+        selectedProviderID: String? = nil,
+        audio: String? = nil,
+        sampleRate: Int? = nil
     ) {
         self.version = version
         self.type = type
@@ -173,6 +189,8 @@ public struct TranslationServiceMessage: Codable, Sendable {
         self.message = message
         self.providerIDs = providerIDs
         self.selectedProviderID = selectedProviderID
+        self.audio = audio
+        self.sampleRate = sampleRate
     }
 }
 
@@ -382,7 +400,8 @@ public final class TranslationServiceClient: @unchecked Sendable {
                                 throw TranslationServiceClientError.cancelled(
                                     requestID: request.id
                                 )
-                            case .serviceStatus, .pong, .translate, .cancel, .status, .ping:
+                            case .serviceStatus, .pong, .translate, .cancel, .status, .ping,
+                                 .transcribe, .audio, .finishAudio, .transcriptStarted, .transcript:
                                 continue
                             }
                         }

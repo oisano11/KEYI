@@ -16,6 +16,8 @@ import OSLog
 public final class TranslationServiceServer: @unchecked Sendable {
     private let socketPath: String
     private let resolver: any TranslationServiceResolving
+    /// 云端语音识别；nil 时 `transcribe` 一律回 `notConfigured`。
+    fileprivate let speech: (any SpeechTranscriptionProviding)?
     private let maximumConcurrentRequests: Int
     private let logger = Logger(
         subsystem: "com.keyi.input-translator",
@@ -31,10 +33,12 @@ public final class TranslationServiceServer: @unchecked Sendable {
     public init(
         socketPath: String = TranslationServiceSocketPath.defaultPath(),
         resolver: any TranslationServiceResolving,
+        speech: (any SpeechTranscriptionProviding)? = nil,
         maximumConcurrentRequests: Int = 4
     ) {
         self.socketPath = socketPath
         self.resolver = resolver
+        self.speech = speech
         self.maximumConcurrentRequests = max(1, maximumConcurrentRequests)
     }
 
@@ -266,7 +270,8 @@ public final class TranslationServiceServer: @unchecked Sendable {
             )
         case .translate:
             return await translate(message)
-        case .cancel, .result, .error, .cancelled, .serviceStatus, .pong:
+        case .cancel, .result, .error, .cancelled, .serviceStatus, .pong,
+             .transcribe, .audio, .finishAudio, .transcriptStarted, .transcript:
             return TranslationServiceMessage(
                 type: .error,
                 id: message.id,
@@ -401,6 +406,9 @@ private final class Connection: @unchecked Sendable {
     private let writeLock = NSLock()
     private let taskLock = NSLock()
     private var requests: [String: RequestContext] = [:]
+    /// 这个连接上的一段语音识别（一个连接最多一段）。
+    private var speechID: String?
+    private var speechSession: (any SpeechTranscriptionSession)?
     private var closed = false
     private var terminated = false
     private let logger = Logger(
@@ -442,6 +450,19 @@ private final class Connection: @unchecked Sendable {
                         message: "协议版本不匹配：请求 \(message.version)，服务 \(TranslationServiceProtocol.version)"
                     )
                 )
+                break
+            }
+            switch message.type {
+            case .transcribe:
+                guard startTranscription(message) else { return }
+                continue
+            case .audio:
+                currentSpeechSession(for: message.id)?.append(Data(base64Encoded: message.audio ?? "") ?? Data())
+                continue
+            case .finishAudio:
+                currentSpeechSession(for: message.id)?.finish()
+                continue
+            default:
                 break
             }
             if message.type == .cancel {
@@ -486,7 +507,10 @@ private final class Connection: @unchecked Sendable {
         terminated = true
         let inFlight = Array(requests.values)
         requests.removeAll()
+        let speech = speechSession
+        speechSession = nil
         taskLock.unlock()
+        speech?.cancel()
         if !alreadyTerminated {
             inFlight.forEach { $0.cancel() }
             if !inFlight.isEmpty {
@@ -515,8 +539,85 @@ private final class Connection: @unchecked Sendable {
         switch reply.type {
         case .result, .error, .cancelled:
             terminate(reason: "已交付终止事件")
-        case .serviceStatus, .pong, .translate, .cancel, .status, .ping:
+        case .serviceStatus, .pong, .translate, .cancel, .status, .ping,
+             .transcribe, .audio, .finishAudio, .transcriptStarted, .transcript:
             break
+        }
+    }
+
+    // MARK: 语音识别
+
+    /// 接下一段识别：宿主说没配好就回 `error` 并结束连接（返回 false）。
+    private func startTranscription(_ message: TranslationServiceMessage) -> Bool {
+        let id = message.id ?? UUID().uuidString
+        taskLock.lock()
+        let busy = speechID != nil
+        taskLock.unlock()
+        guard !busy else {
+            _ = write(TranslationServiceMessage(type: .error, id: id, code: .badRequest, message: "一个连接只能识别一段"))
+            return false
+        }
+        guard let provider = server?.speech else {
+            _ = write(TranslationServiceMessage(type: .error, id: id, code: .notConfigured, message: "没有配置云端语音识别"))
+            return false
+        }
+        let sampleRate = message.sampleRate ?? 16000
+        guard (8000...48000).contains(sampleRate) else {
+            _ = write(TranslationServiceMessage(type: .error, id: id, code: .badRequest, message: "采样率不支持：\(sampleRate)"))
+            return false
+        }
+        taskLock.lock()
+        speechID = id
+        taskLock.unlock()
+        do {
+            let session = try provider.startTranscription(sampleRate: sampleRate) { [weak self] event in
+                self?.deliverSpeech(event, id: id)
+            }
+            taskLock.lock()
+            let alreadyTerminated = terminated
+            if !alreadyTerminated { speechSession = session }
+            taskLock.unlock()
+            guard !alreadyTerminated else {
+                session.cancel()
+                return false
+            }
+            logger.info("语音识别开始 engine=\(session.engineName, privacy: .public)")
+            return write(TranslationServiceMessage(type: .transcriptStarted, id: id, message: session.engineName))
+        } catch {
+            let (code, text) = TranslationServiceErrorMapper.map(error)
+            _ = write(TranslationServiceMessage(type: .error, id: id, code: code, message: text))
+            return false
+        }
+    }
+
+    private func currentSpeechSession(for id: String?) -> (any SpeechTranscriptionSession)? {
+        taskLock.lock()
+        defer { taskLock.unlock() }
+        guard let speechID, id == nil || id == speechID else { return nil }
+        return speechSession
+    }
+
+    /// 云端的文字转成事件；定稿或失败后结束连接。
+    private func deliverSpeech(_ event: SpeechTranscriptionEvent, id: String) {
+        guard !isTerminated else { return }
+        switch event {
+        case let .partial(text):
+            if !write(TranslationServiceMessage(type: .transcript, id: id, text: text)) {
+                terminate(reason: "写回识别文字失败")
+            }
+        case let .final(text):
+            taskLock.lock()
+            speechSession = nil
+            taskLock.unlock()
+            _ = write(TranslationServiceMessage(type: .result, id: id, text: text))
+            terminate(reason: "语音识别已定稿")
+        case let .failed(error):
+            taskLock.lock()
+            speechSession = nil
+            taskLock.unlock()
+            logger.error("语音识别失败 code=\(error.wireCode.rawValue, privacy: .public)")
+            _ = write(TranslationServiceMessage(type: .error, id: id, code: error.wireCode, message: error.message))
+            terminate(reason: "语音识别失败")
         }
     }
 

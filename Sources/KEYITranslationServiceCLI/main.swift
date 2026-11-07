@@ -30,6 +30,6 @@ FileHandle.standardError.write(
 _ = NSApplication.shared
 
 let resolver = KEYITranslationResolverFactory.make()
-TranslationServiceRunner.run(resolver: resolver, socketPath: socketPath) { path in
+TranslationServiceRunner.run(resolver: resolver, speech: KEYISpeechTranscriptionProvider(), socketPath: socketPath) { path in
     FileHandle.standardError.write(Data("KEYI 翻译服务已就绪：\(path)\n".utf8))
 }
