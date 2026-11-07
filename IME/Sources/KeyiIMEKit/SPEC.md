@@ -134,6 +134,41 @@ Rime 确认的文字和回车上屏的拼音字母先交给控制器（`takeComm
 英文，否则原样上屏中文），再把拼音以字母上屏；所有清除标记文字的路径都先结算暂存，不能直接清空。
 有拼音时的 ⌘/⌃/⌥ 组合键仍走 `commitHeldAsChinese`，只上屏中文。
 
+## 语音输入：按住右 ⌥ 说话
+
+PRODUCT_SCOPE「2026-11-07 语音输入最小版授权」。代码在 `InputSession+Dictation.swift`（会话）与
+`KeyiDictation.swift`（引擎接口、右 ⌥ 判定、文字整理、逐字流出）、`KeyiLiveDictation.swift`（一次录音：选云端或本机）、
+`KeyiSenseVoice.swift`（本机识别器、麦克风）、`KeyiCloudDictationDiagnostics.swift`（选路诊断）。
+
+- **触发**：flagsChanged 里只认右 ⌥（keyCode 61，有设备位时看 `NX_DEVICERALTKEYMASK`），按下时不能有
+  别的修饰键，没在打拼音、不是安全输入。事件照常交给应用，从不吞。宿主重复送的按下仍是同一次。
+- **说话中**：识别中的文字（整理掉汉字旁的空格）接在暂存段后面画成标记文字，
+  `compositionClient` 指向它所在的输入框。文字一个字一个字流出来（`KeyiDictationReveal`）：会话记住最新的
+  整段和已露出的字数，识别改了已露出的字就原地换掉（字数不变），新来的字按积压匀速露出，每字 0.02–0.12
+  秒、赶在约 0.5 秒后的下一次识别前露完；面板「中」行是暂存 + 识别中的文字，下一行「正在听…」，底栏
+  「说完松开 右⌥ · 按其他键取消」。期间自动翻译的预览不上面板（`presentPreview` 跳过），说完再由
+  控制器 `restoreOverlay()` 交还，没有可显示的就收起。
+- **松开**：`finish` 识别整段（10 秒的话约 0.1 秒，3 秒没回就按已识别的文字定稿），剩下没露出的字在
+  约 0.25 秒内流完，再和确认的候选走同一条 `takeCommit`：并进暂存段；控制器不接（关闭、安全输入、没有汉字）就直接上屏。
+- **丢弃**：按住时任何按键（`routeKey` 开头）或别的修饰键都当组合键，取消录音、去掉识别中的文字；
+  `deactivate`、`commitComposition`、换了客户端的 `activate` 同样丢弃。松开后、定稿前（或字还没流完）来了按键：先按
+  已识别的整段（含没露出的字）定稿，再处理这个键，说的话不丢；迟到的定稿按代次（`dictationGeneration`）丢弃。
+- **选路**（2026-11-07，`KeyiLiveDictationEngine`）：麦克风一开就经本机 socket 问 KEYI 可译的翻译服务
+  （`TranslationServiceSpeechStream`，见共享包 SPEC「语音识别」）。回 `transcriptStarted`：走云端，每 0.05 秒把新录的
+  声音按 100 毫秒一帧（16 位小端 PCM）送去，云端的整段文字就是实时文字，松开后送完余下的声音、发 `finishAudio` 等定稿；
+  面板底栏写服务给的引擎名（大模型 API 色）。回 `error`、socket 不在、0.5 秒没回应：用本机 SenseVoice（底栏「本机
+  SenseVoice」）。云端中途出错（Key 被拒、额度用完、断网、云端报错、提前结束）：这次改用本机，已录的声音整段交本机识别，提示一行
+  「<原因>，这次改用本机识别」。松开时还没定路：定了再收尾。诊断 `--diagnose-cloud-dictation` 用临时 socket 上的替身
+  服务和 8 倍速的文件声音跑这四种情况。
+- **引擎**：KEYI 自带的 SenseVoice-Small int8（普通话与中英混说，带标点与数字规整），经 sherpa-onnx
+  在本机运行（PRODUCT_SCOPE 同一授权的「补充」）。运行库 `Contents/Frameworks/libsherpa-onnx-c-api.dylib`
+  （依赖同目录的 `libonnxruntime.dylib`）第一次按住右 ⌥ 时用 `dlopen` 加载，不在编译时链接，所以编译、
+  其他测试都不需要它；模型 `Contents/Resources/SenseVoice/model.int8.onnx` 同时在后台加载（约 0.3 秒），
+  之后常驻，闲置 10 分钟卸载。SenseVoice 不是流式模型：说话中按已说的整段反复识别（两次开始之间至少
+  0.45 秒、且不短于上次识别用时的 2 倍，每 0.05 秒看一次到没到），松开后识别整段定稿；所有识别在同一条串行队列上。麦克风转成 16 kHz
+  单声道只放内存，最长约 130 秒，不写盘、不联网。麦克风未授权时第一次按下弹系统授权、这次不录；
+  运行库或模型缺失时提示一行。单次最长 120 秒。
+
 ## 开关：菜单与热键是同一条路
 
 偏好键 `KEYIAutomaticTranslationEnabled`（`UserDefaults.standard`，默认开）。菜单项「自动翻译 ⌃⌥T」在
@@ -159,6 +194,10 @@ Rime 确认的文字和回车上屏的拼音字母先交给控制器（`takeComm
 验证整段暂存、回车、退格、切换客户端等走真实会话的路径。假翻译和安全输入替身只在
 `KEYI_IME_DIAGNOSTIC_FAKE_TRANSLATION=1` 时可用（只有 `IME/Scripts/run-tests.sh` 设置它），正常运行的输入法
 碰不到。锁屏时 `IsSecureEventInputEnabled()` 会变真，所以这组固定安全输入为关。
+同一组还用识别替身（`dictation:` 诊断命令，替掉麦克风和识别器）检查按住右 ⌥ 说话的各条路径。
+
+`--diagnose-dictation-file <音频> <应含文字>` 用包里真实的 SenseVoice 转写一个文件（替掉的只是麦克风），
+`run-tests.sh` 用 `say` 合成一句中文喂给它；没有中文系统语音可合成样本时跳过。
 
 ## 已知边界（已确认）
 

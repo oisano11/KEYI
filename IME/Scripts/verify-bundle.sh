@@ -20,6 +20,15 @@ fail() {
 [[ -x "$APP_MACOS/KEYIIME" ]] || fail "missing executable"
 [[ -f "$APP_CONTENTS/Info.plist" ]] || fail "missing Info.plist"
 [[ -f "$APP_FRAMEWORKS/librime.1.dylib" ]] || fail "missing librime dylib"
+# 语音输入：sherpa-onnx 运行库（dlopen 加载）与 SenseVoice-Small 模型、模型协议原文。
+for speech_library in libsherpa-onnx-c-api.dylib libonnxruntime.dylib; do
+    [[ -f "$APP_FRAMEWORKS/$speech_library" ]] || fail "missing speech runtime: $speech_library"
+done
+for sensevoice_file in model.int8.onnx tokens.txt MODEL_LICENSE; do
+    [[ -f "$APP_RESOURCES/SenseVoice/$sensevoice_file" ]] || fail "missing SenseVoice file: $sensevoice_file"
+done
+grep -q "FunASR Model Open Source License Agreement" "$APP_RESOURCES/SenseVoice/MODEL_LICENSE" \
+    || fail "SenseVoice model licence is not the upstream text"
 
 # macOS only registers a third-party input method when its identifier contains
 # an `.inputmethod.` component that is *not* the final component. The previous
@@ -245,6 +254,8 @@ declare -a required_licences=(
     "yaml-cpp-MIT.txt"
     "boost-BSL1.txt"
     "darts-clone-BSD2.txt"
+    "sherpa-onnx-Apache2.txt"
+    "onnxruntime-MIT.txt"
 )
 for licence in "${required_licences[@]}"; do
     [[ -f "$LICENCE_DIR/$licence" ]] \

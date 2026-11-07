@@ -28,6 +28,25 @@ no hotkey — just translate as you type.
 2. **按回车出英文**：整段中文原位换成英文——只换文字，**绝不替你发送**。
 3. **想保留中文**：单按 Shift，中文原样上屏。
 
+### 按住右 ⌥ 说话 / Voice input
+
+不想打字时，**按住右 ⌥ 说话**：边说边在输入框里出带下划线的中文，松开就定稿，之后和打字一样——
+回车换英文，单按 Shift 保留中文。按住时按了别的键、或中途点到别处，这次录音就取消，说的话不会写进去；
+密码框里不录音。
+
+- **默认本机识别**：用随输入法打包的 SenseVoice-Small（阿里 FunAudioLLM，经 sherpa-onnx 运行），
+  普通话与中英混说都能认，声音不出你的 Mac、不联网。
+- **想更准可以接云端**：在 KEYI 可译「设置 → 高级 → 语音输入」选阿里云 Fun-ASR 或豆包语音识别，
+  填上你自己的 API Key 就能用（按时长计费，约 1–1.2 元/小时；豆包新开通有 20 小时试用）。
+  只有按住右 ⌥ 那段的声音经 KEYI 可译发给你选的服务商，Key 存在钥匙串、不进输入法；
+  没配好或连不上时自动改用本机识别。
+
+**Voice input:** hold the right ⌥ key and talk — Chinese appears underlined as you speak, and Return
+turns it into English just like typed text. Recognition runs on your Mac by default (SenseVoice-Small
+via sherpa-onnx, offline). For higher accuracy you can switch to Aliyun Fun-ASR or Doubao ASR with your
+own API key in KEYI 可译's settings; only the audio you hold ⌥ for is sent, and KEYI falls back to
+on-device recognition when the cloud is unavailable.
+
 ### 为什么用 KEYI 输入法
 
 - **AI 翻译，地道不生硬**：选你要的英文——自然、正式商务、贴近原文，或者地道美式口语。
@@ -55,7 +74,8 @@ IME/Scripts/build-ime.sh release          # 输入法
 IME/Scripts/install-ime.sh release        # 装到 ~/Library/Input Methods，不自动启用
 ```
 
-然后在「系统设置 → 键盘 → 文字输入 → 编辑…」添加「简体中文 → KEYI 拼音」。用法、检查和
+第一次构建输入法会从 GitHub 下载 sherpa-onnx 运行库（约 20 MB）和 SenseVoice 模型（约 160 MB），
+按固定 sha256 校验后打进输入法包。然后在「系统设置 → 键盘 → 文字输入 → 编辑…」添加「简体中文 → KEYI 拼音」。用法、检查和
 词库许可见 [IME/README.md](IME/README.md)；雾凇拼音词库保留其上游 GPL-3.0 等许可，见
 [IME/THIRD_PARTY_NOTICES.md](IME/THIRD_PARTY_NOTICES.md)。
 
@@ -159,6 +179,7 @@ Scripts/package-experimental-binaries.sh
 - 本地模型是 KEYI 自带的 Hy-MT2-1.8B：由你在设置里下载并校验 sha256，KEYI 打包官方 llama.cpp `llama-server` 运行，只走本用户 UNIX socket 加随机密钥，不对外监听。
 - macOS 仅从辅助功能接口读取可确认的选区；完全不暴露文本的控件不再通过剪贴板猜测来源。
 - 终端替换中断后，可从 KEYI 菜单复制保留的原命令，再手动恢复；退出应用会清除尚未取回的原命令。
+- 语音输入默认在本机识别，声音只在内存里、不保存；只有你在设置里选了云端识别时，按住右 ⌥ 期间的声音才会发给你选的服务商（阿里云或豆包）。
 - 请勿在密码框、只读区域或不允许处理敏感内容的输入框中使用。
 
 ## 许可与商业合作

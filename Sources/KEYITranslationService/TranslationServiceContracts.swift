@@ -192,3 +192,35 @@ public enum TranslationServiceErrorMapper {
         return (.providerError, error.localizedDescription)
     }
 }
+
+// MARK: - 语音识别（2026-11-07）
+
+/// 云端语音识别的宿主实现（KEYIUI 侧读设置与 Keychain）。服务端只转发音频与文字，不碰密钥。
+public protocol SpeechTranscriptionProviding: Sendable {
+    /// 开始一段识别。没选云端或没配好时抛 `TranslationServiceResolutionError.notConfigured`，
+    /// 输入法据此改用本机识别。`events` 可在任意线程调用，最后一个必是 `.final` 或 `.failed`。
+    func startTranscription(
+        sampleRate: Int,
+        events: @escaping @Sendable (SpeechTranscriptionEvent) -> Void
+    ) throws -> any SpeechTranscriptionSession
+}
+
+/// 一段进行中的云端识别。
+public protocol SpeechTranscriptionSession: AnyObject, Sendable {
+    /// 给输入法面板看的引擎名，例如「阿里云 Fun-ASR」。
+    var engineName: String { get }
+    /// 一帧 16 位小端单声道 PCM。
+    func append(_ pcm16: Data)
+    /// 音频送完了，等定稿。
+    func finish()
+    /// 立即停止，不再回调。
+    func cancel()
+}
+
+public enum SpeechTranscriptionEvent: Sendable, Equatable {
+    /// 到此刻为止的整段文字。
+    case partial(String)
+    /// 定稿。
+    case final(String)
+    case failed(TranslationServiceResolutionError)
+}

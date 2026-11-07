@@ -88,6 +88,7 @@ public enum KEYITranslationServiceEntry {
         }
         TranslationServiceRunner.run(
             resolver: resolver,
+            speech: KEYISpeechTranscriptionProvider(),
             socketPath: socketPath
         )
     }

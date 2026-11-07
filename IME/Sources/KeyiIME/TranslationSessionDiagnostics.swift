@@ -597,6 +597,167 @@ func runTranslationSessionDiagnostics() -> Never {
         expect(KeyiPanelLayout.caretToKeep(new: .zero, current: caret, isShown: false) == .zero,
                "panels 12: a hidden panel does not reuse an old caret by itself")
     }
+    // (20) Dictation: hold right ⌥ to talk (contract 2026-11-07). The microphone and the
+    // recognizer are replaced by a fake that reports live and final text.
+    @discardableResult
+    func dictation(_ command: String) -> String {
+        KeyiSessionDiagnostics.fakeTranslation("dictation:" + command, in: session)
+    }
+    @discardableResult
+    func rightOption(_ down: Bool, _ client: KeyiDiagnosticTextClient) -> Bool {
+        KeyiSessionDiagnostics.sendFlags(61, modifiers: down ? .option : [], into: session, client: client)
+    }
+    expect(dictation("install") == "ok", "dictation: fake recognizer installs")
+    c = fresh()
+    let startsBefore = Int(dictation("starts")) ?? -1
+    expect(!rightOption(true, c) && dictation("phase") == "listening",
+           "dictation 1: holding right ⌥ starts listening; the event still reaches the app")
+    rightOption(true, c)
+    expect(Int(dictation("starts")) == startsBefore + 1, "dictation 1: a repeated press while holding is the same recording")
+    expect(KeyiSessionDiagnostics.previewPanelVisible(session), "dictation 1: the panel shows while listening")
+    dictation("say:今天")
+    expect(c.markedText.isEmpty, "dictation 1: recognized text is not dropped in all at once")
+    pump(0.5)
+    expect(c.markedText == "今天" && c.committedText.isEmpty, "dictation 1: live text flows into the field as marked text")
+    dictation("say:今天下午 开会")
+    expect(c.markedText == "今天", "dictation 1: new words wait their turn after what is shown")
+    pump(0.3)
+    expect(c.markedText.count > 2 && c.markedText.count < 6,
+           "dictation 1: new words come out one character at a time")
+    pump(1)
+    expect(c.markedText == "今天下午开会" && c.committedText.isEmpty,
+           "dictation 1: all words come out; spaces next to Chinese are dropped")
+    dictation("say:今天下午三点开会")
+    expect(c.markedText == "今天下午三点",
+           "dictation 1: a revision of shown words replaces them in place at once")
+    pump(1)
+    expect(c.markedText == "今天下午三点开会", "dictation 1: the rest of the revision flows in")
+    dictation("say:今天下午三点在会议室开会")
+    dictation("final:今天下午三点在会议室开会。")
+    expect(!rightOption(false, c), "dictation 1: the release still reaches the app")
+    pump(1)
+    expect(dictation("phase") == "idle", "dictation 1: releasing right ⌥ finishes once the last words are out")
+    expect(c.markedText == "今天下午三点在会议室开会。" && c.committedText.isEmpty,
+           "dictation 1: the final Chinese joins the underlined paragraph")
+    // A cloud style stored on this machine waits for the typing pause before previewing.
+    pump(1.8)
+    expect(KeyiSessionDiagnostics.fakeTranslation("requests", in: session).hasSuffix("今天下午三点在会议室开会。"),
+           "dictation 1: the paragraph is previewed like typed Chinese")
+    key(36, "\r", c)
+    pump()
+    expect(c.committedText == "EN(今天下午三点在会议室开会。)" && c.markedText.isEmpty,
+           "dictation 1: Enter puts the English in")
+
+    c = fresh()
+    holdNihao(c)
+    rightOption(true, c)
+    dictation("say:我们走吧")
+    pump(0.8)
+    expect(c.markedText == "你好我们走吧" && c.committedText.isEmpty, "dictation 2: live text follows the held Chinese")
+    rightOption(false, c)
+    pump()
+    expect(c.markedText == "你好我们走吧" && c.committedText.isEmpty, "dictation 2: the speech joins the held paragraph")
+    key(53, "\u{1b}", c)
+    pump()
+    expect(c.committedText == "你好我们走吧" && c.markedText.isEmpty, "dictation 2: Esc keeps typed and spoken Chinese as is")
+
+    c = fresh()
+    holdNihao(c)
+    rightOption(true, c)
+    dictation("say:不要这个")
+    key(0, "å", c, .option)
+    expect(dictation("phase") == "idle", "dictation 3: a key while holding right ⌥ cancels the recording")
+    rightOption(false, c)
+    pump()
+    expect(!c.markedText.contains("不要这个") && !c.committedText.contains("不要这个"),
+           "dictation 3: the cancelled speech is never written")
+
+    c = fresh()
+    rightOption(true, c)
+    dictation("say:取消")
+    KeyiSessionDiagnostics.sendFlags(55, modifiers: [.option, .command], into: session, client: c)
+    expect(dictation("phase") == "idle" && c.markedText.isEmpty && c.committedText.isEmpty,
+           "dictation 4: another modifier while holding cancels and writes nothing")
+    KeyiSessionDiagnostics.sendFlags(55, modifiers: .option, into: session, client: c)
+    rightOption(false, c)
+    pump()
+    expect(c.markedText.isEmpty && c.committedText.isEmpty, "dictation 4: nothing arrives after the release")
+
+    c = fresh()
+    holdNihao(c)
+    rightOption(true, c)
+    dictation("say:点到别处")
+    KeyiSessionDiagnostics.commitComposition(session, client: c)
+    expect(dictation("phase") == "idle" && !c.committedText.contains("点到别处") && !c.markedText.contains("点到别处"),
+           "dictation 5: leaving the field stops listening and drops the speech")
+    rightOption(false, c)
+    pump()
+    expect(!c.committedText.contains("点到别处"), "dictation 5: nothing arrives later")
+
+    c = fresh()
+    let startsWithPinyin = Int(dictation("starts")) ?? -1
+    type("ni", c)
+    rightOption(true, c)
+    expect(dictation("phase") == "idle" && Int(dictation("starts")) == startsWithPinyin,
+           "dictation 6: no recording while pinyin is being typed")
+    rightOption(false, c)
+    key(53, "\u{1b}", c)
+
+    KeyiSessionDiagnostics.fakeTranslation("secure:1", in: session)
+    c = fresh()
+    rightOption(true, c)
+    expect(dictation("phase") == "idle", "dictation 7: no recording in a password field")
+    rightOption(false, c)
+    KeyiSessionDiagnostics.fakeTranslation("secure:0", in: session)
+
+    KeyiSessionDiagnostics.fakeTranslation("auto:0", in: session)
+    c = fresh()
+    rightOption(true, c)
+    dictation("say:直接上屏")
+    pump(0.8)
+    expect(c.markedText == "直接上屏", "dictation 8: with automatic translation off the live text is still marked")
+    rightOption(false, c)
+    pump(0.6)
+    expect(c.committedText == "直接上屏" && c.markedText.isEmpty,
+           "dictation 8: with automatic translation off the Chinese goes straight in")
+    KeyiSessionDiagnostics.fakeTranslation("auto:1", in: session)
+
+    c = fresh()
+    dictation("hold")
+    rightOption(true, c)
+    dictation("say:好的")
+    rightOption(false, c)
+    expect(dictation("phase") == "finishing", "dictation 9: released, waiting for the final text")
+    type("a", c)
+    expect(c.markedText == "好的a" && dictation("phase") == "idle",
+           "dictation 9: a key before the final text keeps everything heard, shown or not, then types")
+    dictation("release")
+    pump()
+    expect(c.markedText == "好的a", "dictation 9: the late final text writes nothing")
+    key(53, "\u{1b}", c)
+    key(53, "\u{1b}", c)
+
+    c = fresh()
+    KeyiSessionDiagnostics.sendFlags(58, modifiers: .option, into: session, client: c)
+    expect(dictation("phase") == "idle", "dictation 10: left ⌥ does not record")
+    KeyiSessionDiagnostics.sendFlags(58, modifiers: [], into: session, client: c)
+
+    c = fresh()
+    rightOption(true, c)
+    dictation("say:OK")
+    rightOption(false, c)
+    pump(0.6)
+    expect(c.committedText == "OK" && c.markedText.isEmpty,
+           "dictation 11: speech without Chinese goes straight in, like typed letters")
+
+    c = fresh()
+    rightOption(true, c)
+    dictation("final:")
+    rightOption(false, c)
+    pump()
+    expect(c.markedText.isEmpty && c.committedText.isEmpty && !KeyiSessionDiagnostics.previewPanelVisible(session),
+           "dictation 12: hearing nothing writes nothing and the panel goes away")
+
     if failures.isEmpty {
         print("TRANSLATION SESSION DIAGNOSTICS PASSED")
         exit(EXIT_SUCCESS)

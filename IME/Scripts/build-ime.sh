@@ -78,6 +78,17 @@ cp "$PROJECT_ROOT/SOURCES.md" "$APP_RESOURCES/SOURCES.md"
 ditto "$PROJECT_ROOT/Vendor/librime/licenses" \
     "$APP_RESOURCES/licenses"
 ditto "$PROJECT_ROOT/resources/rime" "$APP_RESOURCES/RimeData"
+# 语音输入的本地识别：固定版本的 sherpa-onnx 运行库与 SenseVoice-Small 模型（fetch-sensevoice.sh
+# 校验 sha256）。输入法运行时用 dlopen 加载运行库，不在编译时链接；模型约 230 MB。
+SENSEVOICE_PATHS="$("$PROJECT_ROOT/Scripts/fetch-sensevoice.sh")"
+SHERPA_LIB_DIR="$(sed -n 1p <<< "$SENSEVOICE_PATHS")"
+SENSEVOICE_MODEL_DIR="$(sed -n 2p <<< "$SENSEVOICE_PATHS")"
+cp "$SHERPA_LIB_DIR/libsherpa-onnx-c-api.dylib" "$SHERPA_LIB_DIR/libonnxruntime.dylib" "$APP_FRAMEWORKS/"
+mkdir -p "$APP_RESOURCES/SenseVoice"
+cp "$SENSEVOICE_MODEL_DIR/model.int8.onnx" "$SENSEVOICE_MODEL_DIR/tokens.txt" "$APP_RESOURCES/SenseVoice/"
+cp "$PROJECT_ROOT/Vendor/sensevoice/MODEL_LICENSE" "$APP_RESOURCES/SenseVoice/MODEL_LICENSE"
+cp "$PROJECT_ROOT/Vendor/sherpa-onnx/LICENSE" "$APP_RESOURCES/licenses/sherpa-onnx-Apache2.txt"
+cp "$PROJECT_ROOT/Vendor/sherpa-onnx/onnxruntime-LICENSE" "$APP_RESOURCES/licenses/onnxruntime-MIT.txt"
 # Localized bundle and input-mode names, so System Settings shows "KEYI 输入法 /
 # KEYI 拼音" instead of the raw mode identifier.
 ditto "$PROJECT_ROOT/resources/lproj" "$APP_RESOURCES"
@@ -93,6 +104,9 @@ SIGNING_IDENTITY="${KEYI_IME_SIGNING_IDENTITY:--}"
 codesign --force --sign "$SIGNING_IDENTITY" \
     --identifier "com.keyi.inputmethod.keyi" \
     "$APP_FRAMEWORKS/librime.1.dylib"
+for SPEECH_LIBRARY in libonnxruntime.dylib libsherpa-onnx-c-api.dylib; do
+    codesign --force --sign "$SIGNING_IDENTITY" "$APP_FRAMEWORKS/$SPEECH_LIBRARY"
+done
 codesign --force --sign "$SIGNING_IDENTITY" \
     --identifier "com.keyi.inputmethod.keyi" \
     "$APP_BUNDLE"

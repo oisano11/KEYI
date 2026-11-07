@@ -48,6 +48,7 @@ public enum TranslationServiceRunner {
     /// 服务进程主体：起服务后不返回。
     public static func run(
         resolver: any TranslationServiceResolving,
+        speech: (any SpeechTranscriptionProviding)? = nil,
         socketPath: String? = nil,
         onReady: (@Sendable (String) -> Void)? = nil
     ) -> Never {
@@ -60,7 +61,7 @@ public enum TranslationServiceRunner {
             exit(EXIT_SUCCESS)
         }
 
-        let server = TranslationServiceServer(socketPath: path, resolver: resolver)
+        let server = TranslationServiceServer(socketPath: path, resolver: resolver, speech: speech)
         do {
             try server.start()
         } catch {

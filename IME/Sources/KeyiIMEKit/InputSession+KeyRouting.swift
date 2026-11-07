@@ -22,6 +22,7 @@ extension InputSession {
         automaticOverride: KeyiAutomaticTranslationKey? = nil,
         process: () -> Bool
     ) -> Bool {
+        settleDictationBeforeKey()
         shiftTap.cancel()
         syncTranslationClient(client)
         // A composition belongs to the client it started in. A key from another
@@ -120,6 +121,8 @@ extension InputSession {
     /// 单按 Shift（按下又松开，中间没有别的键、修饰键或鼠标点击）：有暂存且没在打拼音时，
     /// 和 Esc 一样把中文原样上屏。事件本身照常交给应用。
     func handleFlagsChanged(_ event: NSEvent, client sender: Any?) {
+        // 按住右 ⌥ 说话（语音输入）；Shift 单按的判定照常看同一个事件。
+        handleDictationFlags(event, client: sender)
         let now = ProcessInfo.processInfo.systemUptime
         let tapped = shiftTap.flagsChanged(
             keyCode: event.keyCode,

@@ -34,6 +34,9 @@ extension InputSession {
     @objc(keyiDiagnosticFakeCommand:)
     func diagnosticFakeCommand(_ command: String) -> String {
         guard KeyiDiagnosticFakeTranslator.isAllowed else { return "refused" }
+        if command.hasPrefix("dictation:") {
+            return diagnosticDictationCommand(String(command.dropFirst("dictation:".count)))
+        }
         switch command {
         case "install":
             diagnosticFakeTranslator = KeyiDiagnosticFakeTranslator()
@@ -55,6 +58,38 @@ extension InputSession {
         case "requests":
             return diagnosticFakeTranslator?.requests.joined(separator: "|") ?? ""
         default:
+            return "unknown"
+        }
+        return "ok"
+    }
+
+    /// Diagnostics-only control of dictation (the microphone and recognizer are replaced):
+    /// `install`, `say:<text>` (live text), `final:<text>` (what finishing returns),
+    /// `hold` / `release` (finishing waits until released), `starts`, `phase`.
+    private func diagnosticDictationCommand(_ command: String) -> String {
+        if command == "install" {
+            diagnosticFakeDictation = KeyiDiagnosticFakeDictation()
+            return "ok"
+        }
+        guard let fake = diagnosticFakeDictation else { return "not installed" }
+        if command.hasPrefix("say:") {
+            fake.say(String(command.dropFirst(4)))
+        } else if command.hasPrefix("final:") {
+            fake.finalText = String(command.dropFirst(6))
+        } else if command == "hold" {
+            fake.holdsFinish = true
+        } else if command == "release" {
+            fake.holdsFinish = false
+            fake.releaseFinish()
+        } else if command == "starts" {
+            return String(fake.starts)
+        } else if command == "phase" {
+            switch dictationPhase {
+            case .idle: return "idle"
+            case .listening: return "listening"
+            case .finishing: return "finishing"
+            }
+        } else {
             return "unknown"
         }
         return "ok"

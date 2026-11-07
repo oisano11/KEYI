@@ -177,7 +177,8 @@ Apache-2.0（见仓库根 `LICENSE.md`）。
   另见第 4 节，不与该文件混同）
 - CC BY-SA 4.0 的 CC-CEDICT 衍生释义
 - Sparkle 及任何自动更新组件
-- 任何本地模型运行时、模型权重，以及在本进程内直接发起的网络或翻译调用
+- 翻译用的本地模型运行时与权重，以及在本进程内直接发起的网络或翻译调用（语音输入的
+  SenseVoice 是唯一随包的模型，见第 8 节）
 
 ## 7. KEYI 自动翻译客户端（本项目，Apache-2.0）
 
@@ -197,3 +198,24 @@ Apache-2.0（见仓库根 `LICENSE.md`）。
 请求用户已安装的「KEYI 可译」伴随应用，由后者按其已配置的提供方完成翻译与日志。
 
 `Scripts/verify-bundle.sh` 对上述数据与组件逐项断言"不存在于产物中"。
+
+## 8. 语音输入的本地识别（2026-11-07 引入）
+
+PRODUCT_SCOPE「2026-11-07 语音输入最小版授权」及其补充。`Scripts/fetch-sensevoice.sh` 在构建时按下列
+固定版本下载、校验 sha256 并解压到 `.build/vendor`，`build-ime.sh` 再拷进包里；源码仓库只放头文件和许可原文。
+
+- **SenseVoice-Small int8**：`https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2`，
+  SHA-256 `7d1efa2138a65b0b488df37f8b89e3d91a60676e416f515b952358d83dfd347e`。由 sherpa-onnx 从
+  https://github.com/FunAudioLLM/SenseVoice 转换（包内 README 写明）。只取 `model.int8.onnx`、`tokens.txt`，
+  放在 `Contents/Resources/SenseVoice/`。同一发布里的 `…-int8-2025-09-09` 是粤语微调版（来自 ASLP-lab/WSYue-ASR），
+  普通话与英文更差，**不用**。
+- **模型协议**：FunASR Model Open Source License Agreement 1.1，原文取自
+  https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE （blob `d5cc52aad23a88da10b8cffbd9b56d43ac7398fa`），
+  存于 `Vendor/sensevoice/MODEL_LICENSE`，随包为 `SenseVoice/MODEL_LICENSE`。
+- **sherpa-onnx v2.0.1**：`https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-osx-arm64-shared.tar.bz2`，
+  SHA-256 `5e874d3c9b3d6b8c71f7c09e3a9fb9ae846c3009129d302b398d1f7aedb69f84`。只取 `lib/libsherpa-onnx-c-api.dylib`
+  与 `lib/libonnxruntime.dylib`（ONNX Runtime 1.28.2），重新签名后放进 `Contents/Frameworks/`；最低 macOS 11、仅 arm64。
+  C API 头文件 `include/sherpa-onnx/c-api/c-api.h` 原样放在 `Vendor/sherpa-onnx/include/`，`Vendor/sherpa-onnx/module.modulemap`
+  只导出类型（不链接）。许可原文：`Vendor/sherpa-onnx/LICENSE`（Apache-2.0，取自 v2.0.1 标签）、
+  `Vendor/sherpa-onnx/onnxruntime-LICENSE`（MIT，取自 microsoft/onnxruntime v1.28.2）。
+

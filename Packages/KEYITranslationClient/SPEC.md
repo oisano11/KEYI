@@ -63,3 +63,16 @@ socket 路径 = `~/Library/Application Support/com.keyi.input-translator/transla
 
 `version = 1`；`maximumMessageBytes = 64 * 1024`。消息超限按 `badRequest` 拒绝，不截断 ——
 截断的文本会被当成完整句子翻出去。
+
+## 语音识别（2026-11-07）
+
+一段录音用一个连接，是「一请求一连接」里唯一由客户端连续发多条的：`transcribe`（带 `sampleRate`）→
+若干 `audio`（`audio` 字段是一帧 16 位小端单声道 PCM 的 base64，输入法每帧 100 毫秒，约 4.3 KB，远低于
+单条上限）→ `finishAudio`。服务端先回 `transcriptStarted`（`message` 是引擎显示名，如「阿里云 Fun-ASR」「豆包语音识别」）
+或 `error`（没选云端、没配好时 `notConfigured`），之后回若干 `transcript`（`text` 是到此刻的整段，后来的
+覆盖前面的），终止事件是 `result`（`text` 为定稿）或 `error`。客户端断开即取消，服务端停掉云端识别。
+
+客户端在共享包 `TranslationServiceSpeechStream`：后台线程连上并发出 `transcribe`，连上前送的帧排着；
+写在一条串行队列上，关闭也在这条队列上，不会写到复用的 fd。协议里仍然没有密钥：云端用的 Key 只在
+KEYI 可译里。旧版服务看不懂 `transcribe`，回 `badRequest`，输入法当作没配好、用本机识别。
+

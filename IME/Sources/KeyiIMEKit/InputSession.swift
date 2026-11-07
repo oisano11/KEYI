@@ -91,6 +91,27 @@ public final class InputSession: NSObject {
     /// 控制器在本次按键里改了上屏或暂存文字，按键结束时重画标记文本。
     var needsRedraw = false
 
+    // MARK: - 语音输入（按住右 ⌥ 说话，见 InputSession+Dictation）
+
+    var dictationPhase = KeyiDictationPhase.idle
+    var dictationEngine: KeyiDictationEngine?
+    /// 识别中、已经露出来的文字，画在暂存段后面；定稿或取消后清空。
+    var dictationLiveText = ""
+    /// 最新识别的整段与露出了几个字（逐字流出）。
+    var dictationReveal = KeyiDictationReveal()
+    /// 下一个字已经排上了。
+    var dictationRevealScheduled = false
+    /// 松开后的定稿已经到了，露完就交出去。
+    var dictationFinalArrived = false
+    /// 这次录音用的识别引擎（面板底栏写它）。
+    var dictationEngineInfo: KeyiDictationEngineInfo?
+    weak var dictationClient: (any IMKTextInput)?
+    /// 每次开始、结束都递增；过时的识别回调不再起作用。
+    var dictationGeneration: UInt = 0
+    var dictationLimitWork: DispatchWorkItem?
+    /// Diagnostics-only: replaces the microphone and the recognizer (`dictation:` commands).
+    var diagnosticFakeDictation: KeyiDiagnosticFakeDictation?
+
     /// 每日字数统计；诊断时用一次性目录，不写进用户自己的统计。
     static let wordStats: KEYIDailyWordStats? =
         KeyiPreferences.diagnosticsUserDataOverride == nil ? .shared : nil
@@ -192,6 +213,7 @@ public final class InputSession: NSObject {
         // IMK 也可能不经 deactivateServer 就释放会话。候选窗与对照浮层由整个输入法进程
         // 共用，只有显示它的会话能收起；会话没了就再没人收，所以离开前收起自己留下的。
         let owner = ownerIdentifier
+        dictationEngine?.cancel()
         DispatchQueue.main.async {
             KeyiTranslationPreviewPanel.hideForSession(owner: owner)
             KeyiCandidatePanel.hideForSession(owner: owner)
@@ -205,6 +227,10 @@ public final class InputSession: NSObject {
         guard let client = sender as? any IMKTextInput else {
             Self.logger.debug("Activation without a text client")
             return
+        }
+        // 录音中换了输入框：停止录音，说的话丢弃。
+        if isDictating, !isSameClient(dictationClient, client) {
+            abandonDictation()
         }
         // 焦点换到另一个输入框：暂存的中文先原样上屏到它所在的输入框（之后控制器才换客户端）。
         if let bound = translationSurfaceClient, !isSameClient(bound, client) {
@@ -245,6 +271,7 @@ public final class InputSession: NSObject {
             return
         }
         shiftTap.cancel()
+        abandonDictation()
         settleHeldForLeaving()
         if let client = resolvedClient(for: sender) {
             commitPendingComposition(client: client)
@@ -267,6 +294,7 @@ public final class InputSession: NSObject {
     @objc(keyiCommitWithClient:)
     func commit(client sender: Any?) {
         guard !isDeliveringToClient else { return }
+        abandonDictation()
         settleHeldForLeaving()
         if let client = resolvedClient(for: sender) {
             commitPendingComposition(client: client)
@@ -277,7 +305,8 @@ public final class InputSession: NSObject {
 
     @objc(keyiRecognizedEventsForClient:)
     func recognizedEvents(client _: Any?) -> UInt {
-        // flagsChanged only for the Shift tap; it is never consumed or sent to Rime.
+        // flagsChanged only for the Shift tap and holding right Option to talk; it is
+        // never consumed or sent to Rime.
         UInt(NSEvent.EventTypeMask.keyDown.rawValue | NSEvent.EventTypeMask.flagsChanged.rawValue)
     }
 
