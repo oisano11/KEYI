@@ -40,7 +40,7 @@
 
 1. **照常打拼音**：确认的中文先带下划线留在输入框里，光标旁的面板实时给出英文预览。
 2. **按回车出英文**：整段中文原位换成英文——只换文字，**绝不替你发送**；再按一次回车才由应用发送或换行。
-3. **想保留中文**：单按 Shift（或 Esc），中文原样上屏、不翻译。
+3. **想保留中文**：选完字后再按一下空格（或 Esc），中文原样上屏、不翻译。
 
 ### 六种英文风格
 
@@ -61,7 +61,7 @@
 ### 按住右 ⌥ 说话
 
 不想打字时，**按住右 ⌥ 说话**：边说边在输入框里出带下划线的中文，松开就定稿，之后和打字一样——
-回车换英文，单按 Shift 保留中文。按住时按了别的键、或中途点到别处，这次录音就取消，说的话不会写进去；
+回车换英文，空格保留中文。按住时按了别的键、或中途点到别处，这次录音就取消，说的话不会写进去；
 密码框里不录音。
 
 - **默认本机识别**：用随输入法打包的 SenseVoice-Small（阿里 FunAudioLLM，经 sherpa-onnx 运行），
@@ -78,7 +78,7 @@
 | 空格 / 数字 1–7 | 选候选词（空格选首选） |
 | `=` `-` 或 PageDown / PageUp | 候选翻页 |
 | **回车** | 整段换成英文上屏（不发送） |
-| **Shift** 或 Esc | 整段原样上屏中文 |
+| **空格**（选完字后）或 Esc | 整段原样上屏中文 |
 | **按住右 ⌥** | 说话输入，松开定稿 |
 | ⌃⌥T | 暂停 / 恢复自动翻译（只在 KEYI 拼音为当前输入法时生效） |
 
@@ -227,7 +227,7 @@ no hotkey — just translate as you type.
 
 - **How it works:** confirmed Chinese stays underlined in the text field while a panel next to the
   cursor previews the English live. Press Return and the whole passage is replaced with English in
-  place — it is never sent for you. Press Shift (or Esc) to keep the Chinese instead.
+  place — it is never sent for you. Press Space after picking your words (or Esc) to keep the Chinese instead.
 - **Six English styles:** Natural (default), Business and Close to Original run on-device with
   Tencent Hunyuan Hy-MT2, so your text never leaves your Mac. Casual American, Black American Casual
   and British Casual use a large-language-model API you configure yourself.
