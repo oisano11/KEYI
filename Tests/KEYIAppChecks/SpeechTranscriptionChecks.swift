@@ -313,5 +313,25 @@ func runSpeechTranscriptionChecks() async throws -> Int {
         check(notConfigured, "没选云端时宿主不接，输入法用本机")
     }
 
+    // 9. 说话键（契约 2026-11-08）：文案跟着设的键走；和 KEYI 可译的翻译快捷键相同的组合键不收。
+    let zh = InterfaceStrings(language: .simplifiedChinese)
+    let en = InterfaceStrings(language: .english)
+    let rightCommand = KEYIDictationShortcut(keyCode: 54)
+    check(zh.speechReady(key: .standard) == "可以用了，按住右 ⌥ 说话"
+            && zh.speechReady(key: rightCommand) == "可以用了，按住右 ⌘ 说话",
+          "「可以用了」写的是设的说话键")
+    check(en.speechReady(key: rightCommand) == "Ready. Hold Right ⌘ to talk.", "英文提示也跟着说话键")
+    check(!zh.speechEngineDetail.contains("右 ⌥") && !en.speechEngineDetail.contains("right ⌥"),
+          "识别说明里不再写死右 ⌥")
+    let problems: [KEYIDictationShortcut.Problem] = [.shift, .plainKey, .translationToggle, .commandShortcut, .unsupported]
+    check(problems.allSatisfy { !zh.speechKeyProblem($0, key: KEYIDictationShortcut(keyCode: 56)).isEmpty
+              && !en.speechKeyProblem($0, key: KEYIDictationShortcut(keyCode: 56)).isEmpty },
+          "每种不能用的键都有说明")
+    let optionT = KEYIDictationShortcut(keyCode: 17, modifiers: .option, keyLabel: "t")
+    check(DictationKeyRow.isDesktopHotKey(optionT, .default), "⌥T 和默认的翻译快捷键相同，不收")
+    check(!DictationKeyRow.isDesktopHotKey(KEYIDictationShortcut(keyCode: 17, modifiers: [.option, .shift], keyLabel: "t"), .default)
+            && !DictationKeyRow.isDesktopHotKey(.standard, .default),
+          "别的键不算和翻译快捷键冲突")
+
     return checks
 }

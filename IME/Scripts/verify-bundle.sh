@@ -150,15 +150,22 @@ if grep -qE '^[[:space:]]*-[[:space:]]+.*pinyin_simp' \
     fail "legacy pinyin_simp is still in the active import chain"
 fi
 # Mixed English input: KEYI's English schema and table, the SCOWL words (with
-# their copyright notice, which the licence requires) and rime-ice's en_ext.
+# their copyright notice, which the licence requires), rime-ice's en_ext and the
+# English hints ranked by wordfreq (with its attribution notice, CC BY-SA 4.0).
 for english_data in "keyi_english.schema.yaml" "keyi_english.dict.yaml" \
                     "english/scowl.dict.yaml" "english/en_ext.dict.yaml" \
-                    "english/LICENSE.scowl"; do
+                    "english/LICENSE.scowl" "english/hint.dict.yaml" \
+                    "english/LICENSE.wordfreq.md"; do
     [[ -f "$APP_RESOURCES/RimeData/$english_data" ]] \
         || fail "missing English data: $english_data"
 done
 grep -q "Kevin Atkinson" "$APP_RESOURCES/RimeData/english/LICENSE.scowl" \
     || fail "SCOWL copyright notice is incomplete"
+grep -q "Robyn Speer" "$APP_RESOURCES/RimeData/english/LICENSE.wordfreq.md" \
+    && grep -q "SUBTLEX" "$APP_RESOURCES/RimeData/english/LICENSE.wordfreq.md" \
+    || fail "wordfreq attribution notice is incomplete"
+grep -q "english/hint" "$APP_RESOURCES/RimeData/keyi_english.dict.yaml" \
+    || fail "English hints are not imported by keyi_english"
 # The legacy pinyin_simp table was removed; it must not come back into the bundle.
 for legacy_data in "pinyin_simp.dict.yaml" "LICENSE.pinyin-simp"; do
     [[ ! -e "$APP_RESOURCES/RimeData/$legacy_data" ]] \
@@ -182,14 +189,14 @@ grep -q "iDvel" "$APP_RESOURCES/RimeData/CREDITS.rime-ice.md" \
 [[ -f "$APP_RESOURCES/KeyiInputLogo.pdf" ]] \
     || fail "missing input mode icon"
 [[ -f "$APP_RESOURCES/KEYI.icns" ]] \
-    || fail "missing app icon (the KEYI hummingbird)"
+    || fail "missing app icon (KEYI clasp)"
 # A full-page PDF makes a huge, blank row in the input menu.
 LOGO_SIZE="$(sips -g pixelWidth -g pixelHeight "$APP_RESOURCES/KeyiInputLogo.pdf" 2>/dev/null \
     | awk '/pixel(Width|Height)/{printf "%d ", $2}')"
 [[ "$LOGO_SIZE" == "16 16 " ]] \
     || fail "input mode icon must be a 16x16 page (got ${LOGO_SIZE:-unknown})"
 # macOS draws input method icons as templates (alpha only): an opaque square shows
-# as a solid block. The icon must have clear pixels (around the hummingbird and the gap between wing and body).
+# as a solid block. The icon must have clear pixels (around the mark and the gaps where the waves cross).
 LOGO_PNG="$(mktemp -t keyi-logo).png"
 sips -s format png -Z 64 "$APP_RESOURCES/KeyiInputLogo.pdf" --out "$LOGO_PNG" >/dev/null 2>&1 \
     || fail "input mode icon could not be rendered"

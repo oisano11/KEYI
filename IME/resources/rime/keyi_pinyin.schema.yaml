@@ -8,7 +8,7 @@
 schema:
   schema_id: keyi_pinyin
   name: KEYI 拼音
-  version: "2.2"
+  version: "2.4"
   # 英文词表随本方案一起部署（中英混输）。
   dependencies:
     - keyi_english
@@ -23,6 +23,10 @@ switches:
 
 engine:
   processors:
+    # 网址和邮箱：打到 www.、http:、https:、ftp:、mailto:、file: 或「字母@」时，后面整段照打的字母、
+    # 数字和符号留在输入里，不转汉字、不换中文标点（recognizer/patterns）。不带前缀的 baidu.com 由输入法
+    # 认出后整段放进输入（set_input），domain 规则让它同样照打的样子留着。
+    - recognizer
     - key_binder
     - speller
     - punctuator
@@ -31,6 +35,7 @@ engine:
     - express_editor
   segmentors:
     - ascii_segmentor
+    - matcher
     - abc_segmentor
     - punct_segmentor
     - fallback_segmentor
@@ -61,6 +66,12 @@ speller:
     - derive/ong$/on/
     - derive/ao$/oa/
     - derive/([iu])a(o|ng?)$/a$1$2/
+
+recognizer:
+  patterns:
+    email: "^[a-z][-_.0-9a-z]*@.*$"
+    url: "^(www[.]|https?:|ftp[.:]|mailto:|file:).*$"
+    domain: "^[a-z0-9][-a-z0-9]*([.][a-z0-9][-a-z0-9]*)+([./:?#].*)?$"
 
 translator:
   dictionary: keyi_pinyin

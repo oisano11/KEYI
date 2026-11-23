@@ -403,6 +403,21 @@ guard backslash.commitText == "、" else {
 }
 pass("pinyin shows no syllable spaces; / commits /, \\ commits 、")
 
+// 11d. English hints (english/hint): the first letters already offer the common
+// words, ranked by frequency (would before wound), on the first page.
+let hintSession = makeSession()
+hintSession.setCandidatePageSize(7)
+let wou = type("wou", into: hintSession)
+guard wou.candidates.first == "would" else {
+    fail("wou does not offer would first: \(wou.candidates)")
+}
+hintSession.clear()
+let woPage = type("wo", into: hintSession)
+guard woPage.candidates.contains("我"), woPage.candidates.contains("would") else {
+    fail("wo does not offer both 我 and would on the first page: \(woPage.candidates)")
+}
+pass("English hints: wou offers would first; wo offers would on the first page")
+
 // 11c. A table copy placed in the user directory wins over the bundled one after
 // an in-process redeploy (how a dictionary update takes effect without a restart).
 let overrideTables = URL(fileURLWithPath: userDataPath).appendingPathComponent("rime_ice/cn_dicts", isDirectory: true)

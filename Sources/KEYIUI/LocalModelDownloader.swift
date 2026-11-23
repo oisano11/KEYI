@@ -149,6 +149,9 @@ enum LocalModelDownloadError: LocalizedError, Equatable {
     case insufficientDiskSpace(requiredBytes: Int64)
     case checksumMismatch
     case badStatus(Int)
+    /// 每个节点都没下成：各自的原因（「节点名：原因」），一个不漏地报
+    /// （只报最后一个时，国内连不上 Hugging Face 会盖掉 ModelScope 真正的原因）。
+    case allNodesFailed([String])
 
     var errorDescription: String? {
         let strings = InterfaceStrings.current
@@ -161,30 +164,53 @@ enum LocalModelDownloadError: LocalizedError, Equatable {
             strings.localModelChecksumMismatch
         case .badStatus(let status):
             strings.localModelDownloadStatus(status)
+        case .allNodesFailed(let reasons):
+            strings.localModelAllNodesFailed(reasons)
         }
     }
 }
 
-/// 下载到 `.partial`，支持 HTTP Range 续传，边写边算 sha256。
-/// 网络错误保留已下部分并换下一个来源续传；校验不符删掉已下部分，换下一个来源重下。
-/// 任务取消时保留已下部分，下次接着下。
+/// 下载过程中报给界面和诊断记录的事。
+enum LocalModelDownloadEvent: Equatable, Sendable {
+    /// 正在给节点测速（界面写「正在给各下载节点测速…」）。
+    case probing
+    /// 开始或换到从这个节点下。
+    case downloading(from: LocalModelDownloadNode)
+    /// 测速结果、选了哪个节点、换节点的原因（写进诊断记录）。
+    case note(String)
+}
+
+/// 多个下载节点（`LocalModelDownloadNodes`，PRODUCT_SCOPE 变更记录 2026-11-11），规则与 C# 版 `ModelDownloader` 一致：
+/// 默认先给各节点各取 2 MB 测速，从最快的下；指定了节点就先用它，不行再给其余的测速。
+/// 下载到 `.partial`，支持 HTTP Range 续传，边写边算 sha256；断了（含 60 秒收不到数据，URLSession 的
+/// `timeoutIntervalForRequest`）就换下一个节点接着已下的部分下；校验不符删掉已下部分，换下一个节点重下。
+/// 请求都带 KEYI 的 User-Agent。任务取消时保留已下部分，下次接着下。
 struct LocalModelDownloader: Sendable {
+    static let userAgent = "KEYI-IME/1.0"
+    static let probeByteCount: Int64 = 2 << 20
+
     let storage: LocalModelStorage
     let session: URLSession
     let progressStep: Int64
+    /// 测速时每个节点最多等多久；到时取到一些就按取到的算，一点没取到算连不上。
+    let probeTimeout: TimeInterval
 
     init(
         storage: LocalModelStorage = .standard,
         session: URLSession = .shared,
-        progressStep: Int64 = 1 << 20
+        progressStep: Int64 = 1 << 20,
+        probeTimeout: TimeInterval = 12
     ) {
         self.storage = storage
         self.session = session
         self.progressStep = progressStep
+        self.probeTimeout = probeTimeout
     }
 
     func download(
         _ model: LocalTranslationModel,
+        plan: LocalModelDownloadPlan = .automatic,
+        events: @escaping @Sendable (LocalModelDownloadEvent) -> Void = { _ in },
         progress: @escaping @Sendable (Int64) -> Void
     ) async throws {
         if storage.isInstalled(model) {
@@ -205,30 +231,129 @@ struct LocalModelDownloader: Sendable {
             throw LocalModelDownloadError.insufficientDiskSpace(requiredBytes: required)
         }
 
-        var lastError: Error = LocalModelDownloadError.checksumMismatch
-        for source in model.downloadURLs {
+        let strings = InterfaceStrings.current
+        var failures: [String] = []
+        var queue = plan.nodes
+        var probed = plan.probeFirst
+        if probed {
+            events(.probing)
+            queue = try await ranked(model, nodes: plan.nodes, failures: &failures, events: events)
+        }
+        var index = 0
+        while index < queue.count {
+            let node = queue[index]
+            if index == 0, !plan.probeFirst {
+                events(.note("用指定的节点 \(node.name) 下"))
+            }
+            events(.downloading(from: node))
             do {
-                let digest = try await fetch(source, into: partial, model: model, progress: progress)
-                guard storage.partialSize(for: model) == model.byteCount,
-                      digest == model.sha256 else {
-                    try? FileManager.default.removeItem(at: partial)
-                    lastError = LocalModelDownloadError.checksumMismatch
-                    continue
+                let digest = try await fetch(node.url(for: model), into: partial, model: model, progress: progress)
+                if storage.partialSize(for: model) == model.byteCount, digest == model.sha256 {
+                    guard rename(partial.path, storage.fileURL(for: model).path) == 0 else {
+                        throw CocoaError(.fileWriteUnknown)
+                    }
+                    try storage.markVerified(model)
+                    progress(model.byteCount)
+                    return
                 }
-                guard rename(partial.path, storage.fileURL(for: model).path) == 0 else {
-                    throw CocoaError(.fileWriteUnknown)
-                }
-                try storage.markVerified(model)
-                progress(model.byteCount)
-                return
+                try? FileManager.default.removeItem(at: partial)
+                failures.append(strings.localModelNodeFailure(node.name, strings.localModelNodeChecksumMismatch))
+                events(.note("\(node.name) 下来的文件校验不符，删掉换下一个节点重下"))
             } catch {
                 if error is CancellationError || Task.isCancelled {
                     throw CancellationError()
                 }
-                lastError = error
+                let reason = Self.reason(for: error)
+                failures.append(strings.localModelNodeFailure(node.name, reason))
+                events(.note(
+                    "\(node.name) 没下成（\(reason)），已下 \(storage.partialSize(for: model) / 1_048_576) MB，换下一个节点接着下"
+                ))
             }
+            // 指定的节点不行：其余的先测速，从快的接着下。
+            if !probed, index == 0, queue.count > 1 {
+                probed = true
+                events(.probing)
+                queue = [node] + (try await ranked(model, nodes: Array(queue.dropFirst()), failures: &failures, events: events))
+            }
+            index += 1
         }
-        throw lastError
+        throw LocalModelDownloadError.allNodesFailed(failures)
+    }
+
+    /// 同时给这些节点测速（从已下的位置往后取 2 MB），返回能用的、从快到慢；不能用的原因记进 failures。
+    private func ranked(
+        _ model: LocalTranslationModel,
+        nodes: [LocalModelDownloadNode],
+        failures: inout [String],
+        events: @Sendable (LocalModelDownloadEvent) -> Void
+    ) async throws -> [LocalModelDownloadNode] {
+        let offset = storage.partialSize(for: model)
+        guard offset < model.byteCount else { return nodes }
+        let probes = await withTaskGroup(of: (Int, LocalModelNodeProbe).self) { group in
+            for (position, node) in nodes.enumerated() {
+                group.addTask { (position, await probe(model, node: node, offset: offset)) }
+            }
+            var results: [(Int, LocalModelNodeProbe)] = []
+            for await result in group {
+                results.append(result)
+            }
+            return results.sorted { $0.0 < $1.0 }.map(\.1)
+        }
+        try Task.checkCancellation()
+        let ranked = LocalModelDownloadNodes.rank(probes)
+        let strings = InterfaceStrings.current
+        failures += probes.filter { !$0.isUsable }.map {
+            strings.localModelNodeFailure($0.node.name, $0.error ?? strings.localModelProbeNoData)
+        }
+        events(.note(
+            "节点测速：" + probes.map(\.summary).joined(separator: "；")
+                + (ranked.first.map { "。从 \($0.name) 下" } ?? "。没有能用的节点")
+        ))
+        return ranked
+    }
+
+    private func probe(
+        _ model: LocalTranslationModel,
+        node: LocalModelDownloadNode,
+        offset: Int64
+    ) async -> LocalModelNodeProbe {
+        let clock = ContinuousClock()
+        let started = clock.now
+        let last = min(offset + Self.probeByteCount, model.byteCount) - 1
+        var request = URLRequest(url: node.url(for: model))
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("bytes=\(offset)-\(last)", forHTTPHeaderField: "Range")
+        let receiver = ProbeReceiver(limit: last - offset + 1)
+        let task = session.dataTask(with: request)
+        task.delegate = receiver
+        let timeout = probeTimeout
+        let timer = Task {
+            try? await Task.sleep(for: .seconds(timeout))
+            if !Task.isCancelled { receiver.timeOut(task) }
+        }
+        let outcome = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                receiver.start(task: task, continuation: continuation)
+            }
+        } onCancel: {
+            task.cancel()
+        }
+        timer.cancel()
+        let elapsed = clock.now - started
+        let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
+        let strings = InterfaceStrings.current
+        let error: String? = switch outcome.ending {
+        case .finished, .reachedLimit:
+            outcome.byteCount > 0 ? nil : strings.localModelProbeNoData
+        case .timedOut:
+            // 测速时间到：取到一些就按取到的算（慢的节点排后面），一点没取到算连不上。
+            outcome.byteCount > 0 ? nil : strings.localModelProbeTimeout(Int(timeout.rounded()))
+        case .status(let status):
+            "HTTP \(status)"
+        case .failed(let message):
+            outcome.byteCount > 0 ? nil : message
+        }
+        return LocalModelNodeProbe(node: node, byteCount: outcome.byteCount, elapsed: seconds, error: error)
     }
 
     private func fetch(
@@ -249,6 +374,7 @@ struct LocalModelDownloader: Sendable {
         }
 
         var request = URLRequest(url: source)
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         if offset > 0 {
             request.setValue("bytes=\(offset)-", forHTTPHeaderField: "Range")
         }
@@ -270,8 +396,95 @@ struct LocalModelDownloader: Sendable {
         }
     }
 
+    /// 某个节点没下成的原因，给界面和诊断记录：HTTP 状态只写「HTTP 403」，网络错误用系统的说明。
+    static func reason(for error: Error) -> String {
+        switch error {
+        case LocalModelDownloadError.badStatus(let status): "HTTP \(status)"
+        default: error.localizedDescription
+        }
+    }
+
     static func hex(_ digest: SHA256.Digest) -> String {
         digest.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+/// 测速：数收到的字节，够了就断开；不写文件。
+private final class ProbeReceiver: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    enum Ending: Sendable {
+        case finished
+        case reachedLimit
+        case timedOut
+        case status(Int)
+        case failed(String)
+    }
+
+    struct Outcome: Sendable {
+        let byteCount: Int64
+        let ending: Ending
+    }
+
+    private let lock = NSLock()
+    private let limit: Int64
+    private var byteCount: Int64 = 0
+    private var ending: Ending?
+    private var continuation: CheckedContinuation<Outcome, Never>?
+
+    init(limit: Int64) {
+        self.limit = limit
+    }
+
+    func start(task: URLSessionDataTask, continuation: CheckedContinuation<Outcome, Never>) {
+        lock.withLock { self.continuation = continuation }
+        task.resume()
+    }
+
+    func timeOut(_ task: URLSessionTask) {
+        let cancel: Bool = lock.withLock {
+            guard ending == nil else { return false }
+            ending = .timedOut
+            return true
+        }
+        if cancel { task.cancel() }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void
+    ) {
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let accepted: Bool = lock.withLock {
+            guard status == 200 || status == 206 else {
+                if ending == nil { ending = .status(status) }
+                return false
+            }
+            return true
+        }
+        completionHandler(accepted ? .allow : .cancel)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        let enough: Bool = lock.withLock {
+            guard ending == nil else { return false }
+            byteCount += Int64(data.count)
+            guard byteCount >= limit else { return false }
+            ending = .reachedLimit
+            return true
+        }
+        if enough { dataTask.cancel() }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        let (continuation, outcome): (CheckedContinuation<Outcome, Never>?, Outcome) = lock.withLock {
+            defer { self.continuation = nil }
+            if ending == nil {
+                ending = error.map { .failed($0.localizedDescription) } ?? .finished
+            }
+            return (self.continuation, Outcome(byteCount: byteCount, ending: ending ?? .finished))
+        }
+        continuation?.resume(returning: outcome)
     }
 }
 

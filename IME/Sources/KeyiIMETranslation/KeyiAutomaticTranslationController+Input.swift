@@ -39,7 +39,7 @@ extension KeyiAutomaticTranslationController {
     case .backspace:
       deleteLastHeldCharacterLocked()
       return .consumed
-    case .escape:
+    case .escape, .space:
       commitAllAsChineseLocked()
       return .consumed
     case .navigation:

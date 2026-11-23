@@ -205,6 +205,24 @@ final class TranslationSettingsStore {
         defaults.set(tier.rawValue, forKey: localModelTierKey)
     }
 
+    /// 本机翻译模型从哪个节点下载：auto（测速选最快，默认）、内置节点的 id，或 custom（自建节点）。
+    func localModelDownloadNode() -> String {
+        LocalModelDownloadNodes.normalizedChoice(defaults.string(forKey: localModelDownloadNodeKey))
+    }
+
+    func selectLocalModelDownloadNode(_ choice: String) {
+        defaults.set(LocalModelDownloadNodes.normalizedChoice(choice), forKey: localModelDownloadNodeKey)
+    }
+
+    /// 自建节点的地址（https，模型文件名接在后面）；原样存，用的时候再校验。
+    func localModelDownloadCustomURL() -> String {
+        defaults.string(forKey: localModelDownloadCustomURLKey) ?? ""
+    }
+
+    func setLocalModelDownloadCustomURL(_ text: String) {
+        defaults.set(text.trimmingCharacters(in: .whitespacesAndNewlines), forKey: localModelDownloadCustomURLKey)
+    }
+
     /// 旧版 LM Studio 配置被迁移后、用户还没看过提示时为 true。
     var hasLocalModelMigrationNotice: Bool {
         defaults.bool(forKey: localModelMigrationNoticeKey)
@@ -341,4 +359,6 @@ final class TranslationSettingsStore {
 
     private let localModelTierKey = "translation.local.tier"
     private let localModelMigrationNoticeKey = "translation.local.migrationNotice"
+    private let localModelDownloadNodeKey = "translation.local.downloadNode"
+    private let localModelDownloadCustomURLKey = "translation.local.downloadCustomURL"
 }

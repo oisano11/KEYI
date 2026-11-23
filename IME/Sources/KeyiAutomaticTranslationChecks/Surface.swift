@@ -16,6 +16,8 @@ final class StubSurface: KeyiTranslationClientSurface {
     var textIsUnreadable = false
     /// 不为 nil 时，`markedRange()` 报告这个范围，模拟应用自己改动了标记文字。
     var markedRangeOverride: NSRange?
+    /// 标记文字不管实际在哪都报在位置 0，模拟把标记文字当成单独一段的应用（终端一类）。
+    var reportsMarkedAtStart = false
     private(set) var replacements: [(text: String, range: NSRange)] = []
     private var changeCount = 0
 
@@ -33,7 +35,7 @@ final class StubSurface: KeyiTranslationClientSurface {
         if let markedRangeOverride { return markedRangeOverride }
         return markedText.isEmpty
             ? NSRange(location: NSNotFound, length: 0)
-            : NSRange(location: committedLength, length: markedLength)
+            : NSRange(location: reportsMarkedAtStart ? 0 : committedLength, length: markedLength)
     }
 
     func documentLength() -> Int { committedLength + markedLength }
@@ -48,7 +50,7 @@ final class StubSurface: KeyiTranslationClientSurface {
 
     func insertText(_ text: String, replacementRange: NSRange) {
         replacements.append((text, replacementRange))
-        let marked = NSRange(location: committedLength, length: markedLength)
+        let marked = NSRange(location: reportsMarkedAtStart ? 0 : committedLength, length: markedLength)
         if replacementRange.location == NSNotFound || (!markedText.isEmpty && replacementRange == marked) {
             committed += text
             markedText = ""

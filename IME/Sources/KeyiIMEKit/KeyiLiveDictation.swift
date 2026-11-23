@@ -11,7 +11,7 @@ struct KeyiDictationEngineInfo: Equatable {
     static let localName = "本机 SenseVoice"
 }
 
-/// 按住右 ⌥ 的一次录音（契约 2026-11-07）。麦克风一开就先问 KEYI 可译的翻译服务接不接云端识别
+/// 按住说话键的一次录音（契约 2026-11-07）。麦克风一开就先问 KEYI 可译的翻译服务接不接云端识别
 /// （本机 socket，平时几毫秒）：
 /// - 接了（用户在 KEYI 可译里选了阿里云 Fun-ASR 且配好了 Key）：每 100 毫秒把新录的声音转成 16 位 PCM
 ///   经服务送去云端，云端回来的整段文字就是实时文字，松开后等云端定稿。Key 只在 KEYI 可译里。

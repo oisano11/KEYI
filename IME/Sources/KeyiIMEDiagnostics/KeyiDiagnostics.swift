@@ -29,6 +29,9 @@ public final class KeyiDiagnosticTextClient: NSObject, IMKTextInput {
     /// this makes the mock behave that way so the candidate-anchor fallback can
     /// be exercised.
     public var suppressesMarkedRange = false
+    /// Terminals and some other hosts cannot read their text back. Setting this makes
+    /// `attributedSubstring` return nil, so the session has to rely on what it typed.
+    public var refusesTextReads = false
     private var selectionRange = NSRange(location: 0, length: 0)
     private var markedDocumentRange = NSRange(location: NSNotFound, length: 0)
     private let caretRect = NSRect(x: 200, y: 600, width: 1, height: 22)
@@ -120,6 +123,7 @@ public final class KeyiDiagnosticTextClient: NSObject, IMKTextInput {
     public func attributedSubstring(
         from range: NSRange
     ) -> NSAttributedString? {
+        if refusesTextReads { return nil }
         let length = (documentText as NSString).length
         guard range.location != NSNotFound,
               NSMaxRange(range) <= length
@@ -256,10 +260,12 @@ public enum KeyiSessionDiagnostics {
         characters: String,
         keyCode: UInt16,
         modifiers: NSEvent.ModifierFlags = [],
-        charactersIgnoringModifiers: String? = nil
+        charactersIgnoringModifiers: String? = nil,
+        type: NSEvent.EventType = .keyDown,
+        isARepeat: Bool = false
     ) -> NSEvent? {
         NSEvent.keyEvent(
-            with: .keyDown,
+            with: type,
             location: .zero,
             modifierFlags: modifiers,
             timestamp: 0,
@@ -267,7 +273,7 @@ public enum KeyiSessionDiagnostics {
             context: nil,
             characters: characters,
             charactersIgnoringModifiers: charactersIgnoringModifiers ?? characters,
-            isARepeat: false,
+            isARepeat: isARepeat,
             keyCode: keyCode
         )
     }
@@ -299,7 +305,9 @@ public enum KeyiSessionDiagnostics {
         into session: AnyObject,
         client: KeyiDiagnosticTextClient,
         modifiers: NSEvent.ModifierFlags = [],
-        charactersIgnoringModifiers: String? = nil
+        charactersIgnoringModifiers: String? = nil,
+        type: NSEvent.EventType = .keyDown,
+        isARepeat: Bool = false
     ) -> Bool {
         let selector = NSSelectorFromString("keyiHandleEvent:client:")
         guard let object = session as? NSObject,
@@ -308,7 +316,9 @@ public enum KeyiSessionDiagnostics {
                   characters: characters,
                   keyCode: keyCode,
                   modifiers: modifiers,
-                  charactersIgnoringModifiers: charactersIgnoringModifiers
+                  charactersIgnoringModifiers: charactersIgnoringModifiers,
+                  type: type,
+                  isARepeat: isARepeat
               )
         else {
             return false

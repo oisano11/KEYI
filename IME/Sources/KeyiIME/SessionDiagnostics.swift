@@ -542,11 +542,34 @@ func runSessionDiagnostics() -> Never {
         expect(page("model").first == "model", "mixed english: model offers model first")
         expect(page("github").first == "GitHub", "mixed english: github offers GitHub first")
         expect(page("deploy").first == "deploy", "mixed english: deploy (SCOWL 40) offers deploy first")
+        func isEnglish(_ word: String) -> Bool { word.unicodeScalars.allSatisfy(\.isASCII) }
+        func chineseThenEnglish(_ shown: [String]) -> Bool {
+            guard let firstEnglish = shown.firstIndex(where: isEnglish) else { return false }
+            return firstEnglish > 0 && shown[firstEnglish...].allSatisfy(isEnglish)
+        }
         let men = page("men")
-        expect(men.first == "们" && men.last == "men", "mixed english: men keeps 们 first and men last (\(men))")
+        expect(men.first == "们" && chineseThenEnglish(men) && men.firstIndex(where: isEnglish).map { men[$0] } == "men",
+               "mixed english: men keeps 们 first, then men, then its hints (\(men))")
         let change = page("change")
-        expect(change.first.map { !$0.unicodeScalars.allSatisfy(\.isASCII) } == true && change.last == "change",
-               "mixed english: change keeps Chinese first and change last (\(change))")
+        expect(chineseThenEnglish(change) && change.firstIndex(where: isEnglish).map { change[$0] } == "change",
+               "mixed english: change keeps Chinese first, then change (\(change))")
+        // 英文联想（english/hint）：打前几个字母就出常用词。
+        let wo = page("wo")
+        expect(wo.first == "我" && chineseThenEnglish(wo) && wo.contains("would"),
+               "english hints: wo keeps 我 first and offers would at the end (\(wo))")
+        expect(page("wou").first == "would", "english hints: wou offers would first")
+        expect(page("bec").prefix(2) == ["because", "become"], "english hints: bec offers because, become first")
+        expect(page("gith").first == "GitHub", "english hints: gith offers GitHub first")
+        let model = page("model")
+        expect(model.prefix(2) == ["model", "models"], "english hints: model keeps model first, then models (\(model))")
+        let sh = page("sh")
+        expect(sh.first == "sh" && sh.suffix(2) == ["she", "should"] && !isEnglish(sh[1]),
+               "english hints: sh keeps sh and Chinese first, she and should last (\(sh))")
+        let hintClient = KeyiDiagnosticTextClient()
+        KeyiSessionDiagnostics.activate(session, client: hintClient)
+        _ = KeyiSessionDiagnostics.typeText("bec", into: session, client: hintClient)
+        _ = KeyiSessionDiagnostics.sendKey(49, characters: " ", into: session, client: hintClient)
+        expect(hintClient.documentText == "because", "english hints: space on bec commits because (\(hintClient.documentText))")
         let spaceClient = KeyiDiagnosticTextClient()
         KeyiSessionDiagnostics.activate(session, client: spaceClient)
         _ = KeyiSessionDiagnostics.typeText("model", into: session, client: spaceClient)
@@ -597,6 +620,30 @@ func runSessionDiagnostics() -> Never {
                 "app learning: arrow + space on a reordered page commits the word shown second"
             )
         }
+    }
+
+    // 自动翻译关闭时同样：英文后面的标点是英文（半角）的，中文后面照旧是中文标点（用户 2026-11-08）。
+    do {
+        func punctuationClient() -> KeyiDiagnosticTextClient {
+            let client = KeyiDiagnosticTextClient()
+            KeyiSessionDiagnostics.activate(session, client: client)
+            return client
+        }
+        let english = punctuationClient()
+        _ = KeyiSessionDiagnostics.typeText("hello", into: session, client: english)
+        _ = KeyiSessionDiagnostics.typeText(",", into: session, client: english)
+        expect(english.documentText == "hello," && english.markedText.isEmpty,
+               "punctuation (translation off): hello then , gives hello, (got \(english.documentText))")
+        _ = KeyiSessionDiagnostics.typeText("nihao", into: session, client: english)
+        _ = KeyiSessionDiagnostics.typeText(".", into: session, client: english)
+        expect(english.documentText == "hello,你好。",
+               "punctuation (translation off): nihao then . after it gives 你好。 (got \(english.documentText))")
+        let raw = punctuationClient()
+        _ = KeyiSessionDiagnostics.typeText("model", into: session, client: raw)
+        _ = KeyiSessionDiagnostics.sendKey(36, characters: "\r", into: session, client: raw)
+        _ = KeyiSessionDiagnostics.typeText("?", into: session, client: raw)
+        expect(raw.documentText == "model?",
+               "punctuation (translation off): Enter-committed letters then ? gives model? (got \(raw.documentText))")
     }
 
     // (9) The diagnostics never touch the live user data directory.

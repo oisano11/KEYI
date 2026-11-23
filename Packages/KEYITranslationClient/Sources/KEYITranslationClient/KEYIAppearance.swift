@@ -1,4 +1,6 @@
+#if canImport(AppKit)
 import AppKit
+#endif
 import Foundation
 
 /// KEYI 的三套主题。每套有亮、暗两种，跟随系统外观自动切换。
@@ -89,9 +91,11 @@ public struct KEYIColorValue: Equatable, Sendable {
         KEYIColorValue(red: Double(red) / 255, green: Double(green) / 255, blue: Double(blue) / 255, alpha: alpha)
     }
 
+#if canImport(AppKit)
     public var nsColor: NSColor {
         NSColor(srgbRed: red, green: green, blue: blue, alpha: alpha)
     }
+#endif
 }
 
 /// 设计稿 theme.css 里的全部颜色变量。
@@ -230,10 +234,12 @@ public enum KEYIAppearanceSettings {
         theme.tokens(dark: dark)
     }
 
+#if canImport(AppKit)
     /// 给定外观是不是暗色。
     public static func isDark(_ appearance: NSAppearance) -> Bool {
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
     }
+#endif
 
     private static func copyValue(_ key: String) -> CFPropertyList? {
         CFPreferencesAppSynchronize(preferencesDomain as CFString)
@@ -252,11 +258,13 @@ public enum KEYIAppearanceSettings {
     private static func setValue(_ value: CFPropertyList, key: String) {
         CFPreferencesSetAppValue(key as CFString, value, preferencesDomain as CFString)
         CFPreferencesAppSynchronize(preferencesDomain as CFString)
+#if os(macOS)
         DistributedNotificationCenter.default().postNotificationName(
             didChangeNotification,
             object: nil,
             userInfo: nil,
             deliverImmediately: true
         )
+#endif
     }
 }

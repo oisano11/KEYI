@@ -14,7 +14,8 @@ public struct LocalTranslationModel: Equatable, Sendable {
     public let fileName: String
     public let byteCount: Int64
     public let sha256: String
-    /// 按顺序尝试；前一个来源失败或校验不符时换下一个。
+    /// 这个文件在各内置下载节点上的地址（ModelScope、Hugging Face、HF-Mirror）。
+    /// 实际先试哪个由 `LocalModelDownloadPlan` 决定（默认测速选最快，见 `LocalModelNodes.swift`）。
     public let downloadURLs: [URL]
     /// 标准档把场景、英语风格和输入框上下文写进提示词；轻量档只直译。
     public let usesSceneContext: Bool
@@ -65,11 +66,6 @@ public enum LocalTranslationModelCatalog {
         maxTokens: 4096
     )
 
-    private static let modelScopeBase =
-        "https://modelscope.cn/models/Tencent-Hunyuan/Hy-MT2-1.8B-GGUF/resolve/ef1d40b8b315575d30d1eb6579996130b8fc0bb2/"
-    private static let huggingFaceBase =
-        "https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF/resolve/a0c709d9fac510f2c807aa3af52872340dc37a4a/"
-
     public static let models: [LocalTranslationModel] = [
         makeModel(
             tier: .light,
@@ -111,8 +107,8 @@ public enum LocalTranslationModelCatalog {
             fileName: fileName,
             byteCount: byteCount,
             sha256: sha256,
-            downloadURLs: [modelScopeBase, huggingFaceBase].map {
-                URL(string: $0 + fileName)!
+            downloadURLs: LocalModelDownloadNodes.builtIn.map {
+                URL(string: $0.baseURL + fileName)!
             },
             usesSceneContext: usesSceneContext
         )

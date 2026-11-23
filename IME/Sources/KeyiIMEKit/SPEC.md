@@ -106,23 +106,83 @@ ObjC 控制器只实现 `handleEvent:client:`（和鼠须管一样）。只要�
    任何回车组合，当普通回车（字母并进段落、不交给应用）。Home/End 在有暂存时不动。
 4. `finishUserInput(pinyin:)`，然后重画标记文字和候选窗。
 
-**单按 Shift**（2026-10-31 用户选定，替代不顺手的 Esc 作为“保留中文”键，Esc 照旧可用）：
-`recognizedEvents` 另外订阅 `flagsChanged`，只给 `KeyiShiftTap` 看，永远返回 false（照常交给应用）、
-从不交给 Rime。左/右 Shift 单独按下（修饰键恰好只有 Shift）再松开同一个 Shift、松开时没有任何修饰键
-还按着，且按下以后没有鼠标按下（`CGEventSource.secondsSinceLastEventType`，不需要权限），才算一次。
-任何 `routeKey` 按键（含 Shift+字母）、`deactivate` 都清掉正在算的那次。算一次、没有拼音、有暂存时，
-走和 Esc 相同的 `routeKey(… automaticOverride: .escape)`。打拼音时（2026-10-31 用户追加“和 Esc 一样”，
-直接变成中文、不翻译）：自动翻译开着、拼音归这个客户端时，同样在 `routeKey(… .escape)` 里
-`commitPinyinAndHeldAsChinese`：选高亮候选（Rime 只转了一部分就再选，最多 16 轮、没有进展就停），
-剩下转不了的字母并进暂存，再 `commitHeldAsChinese()` 整段上屏；控制器不接管（安全输入、关闭、没有
-输入框）时 `apply` 照旧直接上屏候选。自动翻译关闭时打拼音按 Shift 不起作用。不限按住时长。
+**空格保留中文**（2026-11-23 用户「mac和windows现在输出中文是用shift,改为空格」，代替 2026-10-31 起的单按 Shift，
+Esc 照旧可用）：`KeyiRimeKeyMapper.automaticKey` 把空格（含 ⇧+空格）归成 `.space`。没有拼音时 `routeKey` 先交给控制器：
+有暂存（含回车后等英文、翻译失败）就和 Esc 一样 `commitAllAsChineseLocked` 整段原样上屏、吞掉；没有暂存时控制器交还，
+空格照常交给 Rime / 应用。打拼音时 `.space` 不走组合键那条路，照旧交给 Rime 选高亮候选，转出的中文并进暂存，
+再按一下空格才上屏。所以暂存段里打不进空格（同 Android）。安全输入刚结算掉暂存时，空格交给应用（只有回车、Esc 吞掉）。
+单按 Shift 不再有作用（`KeyiShiftTap` 已删）；`flagsChanged` 只给按住说话键用，永远返回 false、从不交给 Rime。
 
 `⌘`/`⌃` 放行是显然的；`⌥` 也放行，尽管 Option 在 Rime 里是合法的拼音分隔符 ——
 应用把 ⌥ 组合当快捷键用的频率远高于用户想用它输入分隔符。同理 `⌥⌫`、`⌥⌦` 这类应用编辑快捷键
 放行，不降级成普通退格。
 
 组合期间按回车提交原始拼音并**消耗该回车**（有暂存时字母并进段落）；数字 1–7 选词（每页 7 个）、空格
-上屏首选、PageUp/PageDown 翻页、Tab/↑/↓ 移动高亮、←/→ 在拼音内移动、Escape 取消。
+选首选（有暂存时并进段落，再按一下空格才保留中文上屏）、PageUp/PageDown 翻页、Tab/↑/↓ 移动高亮、←/→ 在拼音内移动、Escape 取消。
+
+## 中英混输与英文联想（2026-11-04、2026-11-11）
+
+英文词表 `keyi_english`（`table_translator@keyi_english`）和拼音候选合在一页。英文候选有两种：正好是打的字母的
+单词（`model`、`GitHub`，SCOWL 常用词与雾凇 `en_ext`），和以打的字母开头的常用词联想（`english/hint`，用户
+2026-11-11「应该打到第三个或者第二字母，软件就能联想到他打什么英文了」）。联想不用 librime 的
+`enable_completion`（它把短词排前面，`wo` 先出 won、woe）：`Scripts/generate-english-hints.py` 给每个两个字母以上的
+前缀单独写几条，按 wordfreq 词频排，只从现有英文词表里挑每百万词至少出现一次的词。Rime 把英文排在一页前面，
+`mixedEnglishOrder` 按打的字母重新摆（比较时去掉符号、统一小写）：
+
+- 整段能拼成拼音（`wo`、`men`、`change`）：中文在前，完整单词、联想放这一页末尾；这样的前缀联想最多 2 个。
+- 拼不成拼音、三个字母以上（`wou`、`bec`、`model`）：完整单词第一，联想紧跟着，中文在后；联想最多 4 个。
+- 拼不成拼音、只有两个字母（`sh`）：完整单词第一，中文其次，联想放末尾（简拼的中文不被挤走）。
+
+之后再按 App 学习重排、插入网址那一项。选联想和选单词一样：第一个汉字之前直接上屏，之后并进暂存段一起翻译。
+检查：`keyi-smoke` 11d（真实 Rime 第一页有联想），`--diagnose-session` (14)（`wo`、`wou`、`bec`、`gith`、`model`、
+`sh` 的摆放，`bec` 空格上屏 because）；Windows/Android 共用 C# 检查的 english hints 组。
+
+## 英文后面的标点（2026-11-08）
+
+用户：“When you type in English, any punctuation you add after it should be English punctuation.” 标点键
+（ASCII 可见字符里除字母、数字以外的，只带 Shift/Caps Lock）前面是英文时，直接出键上的原字符，不经 Rime 的
+中文标点（`InputSession+Punctuation`，判断规则在 `KeyiPunctuationContext`）；前面是中文、或看不出来时照旧
+交给 Rime，出 `keyi_pinyin.schema.yaml` 里的中文标点。出来的英文标点和中文标点一样只是普通文字：有暂存段就
+并进去（不打断、不触发翻译），没有就直接上屏。自动翻译开关、安全输入都不影响这条规则。
+
+- **前面是什么**：从光标往前跳过空格、数字、英文标点和 emoji，碰到的第一个字是拉丁字母（含 é 等）就是英文，
+  是汉字、全角标点或其他文字就是中文；碰到换行或什么都没有就是看不出来。所以 `Python3,`、`Hello."`、
+  `git commit -` 是英文的，`价格20，`、`你好/，` 是中文的。
+- **看哪段文字**：有暂存段时看暂存段（从汉字开始，总能定下来）；没有时先看本会话刚写进这个输入框的文字
+  （`typedTail`：`commitToClient` 和译文上屏写进去的，加上交给应用直接打出的可见字符，留最后 32 个），
+  定不了再读输入框光标前最多 32 个 UTF-16 单元。终端一类读不回文字的宿主只靠前两样。交给应用的回车、
+  方向键、Tab、组合键和离开输入框（deactivate）之后 `typedTail` 清空，换了输入框就只认新的，退格删掉最后一个；
+  写完之后点过鼠标（`CGEventSource`，与单按 Shift 同一个判据）也不再用它。
+- **正在打拼音时按标点**（`'` 是拼音分隔符、`=`/`-` 是翻页键，除外）：先按面板上高亮的候选把拼音转成字
+  （`confirmCompositionAsShown`，与单按 Shift 共用：选不下去时按 Rime 显示的样子、剩下的字母照打的样子），
+  再按转出来的字判断：`hello,` → `hello,`，`nihao,` → `你好，`。以前这一步由 Rime 用它自己的第一个候选，
+  与面板顺序（中英混输、按 App 学习）不一致时会上屏面板上没排第一的词（`women,` 出 `women，`），现在出 `我们，`。
+- 只有数字时不算英文，照旧交给 Rime（librime 自己会把数字后面的 `.` `:` 留成半角，3.14、12:30）。
+- **网址和邮箱**（2026-11-11，用户报告打网址时按了符号，前面的字母就变成了中文：`www.baidu.com` 出
+  `万维网。百度。com`，`oisano@icloud.com` 出 `哦isano@iCloud.com`）：`keyi_pinyin.schema.yaml` 打开 librime 的
+  `recognizer`/`matcher`，`www.`、`http:`、`https:`、`ftp.`、`ftp:`、`mailto:`、`file:` 开头，或小写字母开头、
+  接着 `@`（前面只有小写字母、数字和 `-_.`）时，整段照打的样子留在输入里，没有候选。会话按同一套规则
+  （`KeyiPunctuationContext.isAddressInput`）：正在打拼音时按的标点能接成网址或邮箱，就交给 Rime 并进输入，
+  不先按候选转字；输入已经是网址或邮箱时，数字、`=`、`-`、`'` 和其他符号都照打进输入（不选候选、不翻页），
+  空格和回车一样把整段照打的样子上屏，有暂存段时并进去。退格删到不再是网址（如回到 `www`）就照常出拼音候选。
+  `@` 前面打数字照旧选候选。
+- **不带前缀的网址**（2026-11-11，用户「把 baidu.com 这种不带前缀的也修好」，`InputSession+BareDomain`）：按 `.` 时
+  还不知道是句号还是网址（`haode.` 要出 `好的。`），所以照旧先按候选转字，同时记下这一段（照打的 `baidu.`、转出的
+  `百度。`、在暂存段里还是已经上屏——第一个汉字之前的英文 `GitHub.` 直接上屏）。接着打的字母正好是常见后缀
+  （`KeyiPunctuationContext.bareDomainSuffixes`：com、cn、net、org、io、ai…）时，候选里多一项整段网址（面板顺序记作
+  `domainOfferSlot`，不是 Rime 的候选）：排第一并高亮；整段都能拼成拼音时（`woaini.ai`）排第二，空格照旧出
+  `我爱你。爱`。它高亮时下划线里就画成选了它之后的样子（`你好mail.sina.com`，`domainOfferMarkedText`），挪到别的候选上
+  又画回 `百度。com`（用户 11-11 截图：已经打出 `.com` 还显示「是那。com」，看不出是网址）。选它——空格、回车、数字、单按 Shift、接着打 `. / : ? #`（网址留在输入里接着打）或别的标点（先上屏网址，
+  再按英文标点）——就把暂存段末尾转出来的字删掉（控制器 `dropHeldSuffix`），整段照打的样子经 librime `set_input`
+  放进输入，方案的 `domain` 规则让它和 `www.` 开头的网址一样照打的样子留着。已经上屏的开头（`GitHub.`）留在输入框里不动，
+  Rime 输入里的这部分（`addressShownPrefix`）不画、不再上屏，结果是 `GitHub.com`；退格删进这部分时输入整段作废。
+  按完还在打拼音（打后缀、在候选上挪）或是打拼音时的退格，都接着记下的几段；拼音结束了（空格选字、回车、Esc、
+  组合键…）、点过鼠标、换了输入框、暂存段末尾已不是转出来的字就作废。前面几段接不接得上要在按下一个 `.` 之前核对
+  （按完之后暂存段末尾已经是这一段转出的字）：11-11 截图里 `mail.` 就是因为核对晚了被丢掉，候选只剩 `sina.com`。关了自动翻译时转出的中文已经直接上屏，改不回去，照旧是 `百度。com`。
+
+检查：`KeyiAutomaticTranslationChecks` 的 punctuation after English 组（规则、网址判断与并进暂存段）；
+`KEYIIME --diagnose-session-translation` 的 punctuation 1–8 组与 `--diagnose-session` 的 punctuation
+（translation off）组（真实 Rime，替身客户端可设成读不回文字）。
 
 ## 提交路径
 
@@ -134,19 +194,27 @@ Rime 确认的文字和回车上屏的拼音字母先交给控制器（`takeComm
 英文，否则原样上屏中文），再把拼音以字母上屏；所有清除标记文字的路径都先结算暂存，不能直接清空。
 有拼音时的 ⌘/⌃/⌥ 组合键仍走 `commitHeldAsChinese`，只上屏中文。
 
-## 语音输入：按住右 ⌥ 说话
+## 语音输入：按住说话键说话
 
-PRODUCT_SCOPE「2026-11-07 语音输入最小版授权」。代码在 `InputSession+Dictation.swift`（会话）与
-`KeyiDictation.swift`（引擎接口、右 ⌥ 判定、文字整理、逐字流出）、`KeyiLiveDictation.swift`（一次录音：选云端或本机）、
+PRODUCT_SCOPE「2026-11-07 语音输入最小版授权」；说话键可自定见变更记录 2026-11-08。代码在 `InputSession+Dictation.swift`（会话）与
+`KeyiDictation.swift`（引擎接口、现在的说话键、文字整理、逐字流出）、`KeyiLiveDictation.swift`（一次录音：选云端或本机）、
 `KeyiSenseVoice.swift`（本机识别器、麦克风）、`KeyiCloudDictationDiagnostics.swift`（选路诊断）。
 
-- **触发**：flagsChanged 里只认右 ⌥（keyCode 61，有设备位时看 `NX_DEVICERALTKEYMASK`），按下时不能有
-  别的修饰键，没在打拼音、不是安全输入。事件照常交给应用，从不吞。宿主重复送的按下仍是同一次。
+- **说话键**：存在 KEYI 可译偏好域（共享包 `KEYIDictationShortcut` / `KEYIDictationShortcutSettings`，默认右 ⌥），
+  KEYI 可译改了发 `com.keyi.dictation-shortcut.changed`，`KeyiDictationKey` 当场重读；每次 `activate` 和
+  `recognizedEvents` 也重读。存的值不能用（缺字段、⇧、单独的普通键、⌃⌥T、⌘ 加一个键）时按右 ⌥。
+- **触发（单个修饰键）**：flagsChanged 里只认这个键的键码（左右分开，有设备位时看 `NX_DEVICE*` 位，没有时看
+  这类修饰键的标志），按下时不能有别的修饰键，没在打拼音、不是安全输入。事件照常交给应用，从不吞。宿主重复送的按下仍是同一次。
+- **触发（组合键或 F1–F20）**：`handle` 在 flagsChanged 之后、进 `routeKey` 之前先看 `handleDictationKeyEvent`：
+  键码相同且 ⌃⌥⇧⌘ 正好是要求的那几个（Fn、Caps Lock 不算）的按下开始录音；按下、自动重复和松开都返回 true，
+  不进拼音也不交给应用（打拼音时、密码框里按也只吞掉、不录）。`recognizedEvents` 此时多要 keyUp，别的键的
+  keyUp 原样还给应用。松开主键结束；主键还按着时松开了要求的修饰键也结束，之后主键的重复和松开照样吞掉；
+  多按了别的修饰键取消。`dictationKeyIsDown` 只用来认重复：松开在别的应用里没送到时，下一次新的按下照常开始。
 - **说话中**：识别中的文字（整理掉汉字旁的空格）接在暂存段后面画成标记文字，
   `compositionClient` 指向它所在的输入框。文字一个字一个字流出来（`KeyiDictationReveal`）：会话记住最新的
   整段和已露出的字数，识别改了已露出的字就原地换掉（字数不变），新来的字按积压匀速露出，每字 0.02–0.12
   秒、赶在约 0.5 秒后的下一次识别前露完；面板「中」行是暂存 + 识别中的文字，下一行「正在听…」，底栏
-  「说完松开 右⌥ · 按其他键取消」。期间自动翻译的预览不上面板（`presentPreview` 跳过），说完再由
+  「说完松开 <说话键> · 按其他键取消」。期间自动翻译的预览不上面板（`presentPreview` 跳过），说完再由
   控制器 `restoreOverlay()` 交还，没有可显示的就收起。
 - **松开**：`finish` 识别整段（10 秒的话约 0.1 秒，3 秒没回就按已识别的文字定稿），剩下没露出的字在
   约 0.25 秒内流完，再和确认的候选走同一条 `takeCommit`：并进暂存段；控制器不接（关闭、安全输入、没有汉字）就直接上屏。
@@ -162,7 +230,7 @@ PRODUCT_SCOPE「2026-11-07 语音输入最小版授权」。代码在 `InputSess
   服务和 8 倍速的文件声音跑这四种情况。
 - **引擎**：KEYI 自带的 SenseVoice-Small int8（普通话与中英混说，带标点与数字规整），经 sherpa-onnx
   在本机运行（PRODUCT_SCOPE 同一授权的「补充」）。运行库 `Contents/Frameworks/libsherpa-onnx-c-api.dylib`
-  （依赖同目录的 `libonnxruntime.dylib`）第一次按住右 ⌥ 时用 `dlopen` 加载，不在编译时链接，所以编译、
+  （依赖同目录的 `libonnxruntime.dylib`）第一次按住说话键时用 `dlopen` 加载，不在编译时链接，所以编译、
   其他测试都不需要它；模型 `Contents/Resources/SenseVoice/model.int8.onnx` 同时在后台加载（约 0.3 秒），
   之后常驻，闲置 10 分钟卸载。SenseVoice 不是流式模型：说话中按已说的整段反复识别（两次开始之间至少
   0.45 秒、且不短于上次识别用时的 2 倍，每 0.05 秒看一次到没到），松开后识别整段定稿；所有识别在同一条串行队列上。麦克风转成 16 kHz
@@ -194,7 +262,7 @@ PRODUCT_SCOPE「2026-11-07 语音输入最小版授权」。代码在 `InputSess
 验证整段暂存、回车、退格、切换客户端等走真实会话的路径。假翻译和安全输入替身只在
 `KEYI_IME_DIAGNOSTIC_FAKE_TRANSLATION=1` 时可用（只有 `IME/Scripts/run-tests.sh` 设置它），正常运行的输入法
 碰不到。锁屏时 `IsSecureEventInputEnabled()` 会变真，所以这组固定安全输入为关。
-同一组还用识别替身（`dictation:` 诊断命令，替掉麦克风和识别器）检查按住右 ⌥ 说话的各条路径。
+同一组还用识别替身（`dictation:` 诊断命令，替掉麦克风和识别器）检查按住说话键说话的各条路径（先把说话键钉成右 ⌥）；voice key 1–8 组换成右 ⌘、⌃⌥V、F5、Fn 再查一遍。
 
 `--diagnose-dictation-file <音频> <应含文字>` 用包里真实的 SenseVoice 转写一个文件（替掉的只是麦克风），
 `run-tests.sh` 用 `say` 合成一句中文喂给它；没有中文系统语音可合成样本时跳过。

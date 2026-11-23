@@ -11,8 +11,10 @@
 //
 
 import Foundation
+#if canImport(InputMethodKit)
 import InputMethodKit
 import Carbon
+#endif
 import KEYITranslationClient
 
 // MARK: - 客户端文本能力
@@ -51,6 +53,8 @@ public extension KeyiTranslationClientSurface {
   func isSecureInputEnabled() -> Bool { false }
 }
 
+// iOS 版（iOS/IME/）的键盘没有 IMK，用自己的 UITextDocumentProxy 实现这个协议。
+#if canImport(InputMethodKit)
 /// 真实 IMK 客户端的能力实现。对 `IMKTextInput` 的读取与写入都发生在输入法
 /// 会话的主线程上；本类的所有方法都不得在后台线程使用。
 public final class KeyiIMKTextInputSurface: KeyiTranslationClientSurface {
@@ -100,6 +104,7 @@ public final class KeyiIMKTextInputSurface: KeyiTranslationClientSurface {
     client.bundleIdentifier()
   }
 }
+#endif
 
 // MARK: - 可取消句柄
 

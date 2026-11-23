@@ -250,6 +250,68 @@ struct InterfaceStrings: Sendable {
     func localModelDownloading(_ done: String, _ total: String) -> String {
         isEnglish ? "Downloading \(done) / \(total)" : "下载中 \(done) / \(total)"
     }
+    func localModelDownloadingFrom(_ done: String, _ total: String, _ node: String) -> String {
+        isEnglish ? "\(done) / \(total) from \(node)" : "\(done) / \(total)，来自 \(node)"
+    }
+    var localModelProbingNodes: String {
+        isEnglish ? "Testing download nodes…" : "正在给各下载节点测速…"
+    }
+    /// 每个节点都没下成时，把各自的原因都列出来。
+    func localModelAllNodesFailed(_ reasons: [String]) -> String {
+        guard !reasons.isEmpty else { return isEnglish ? "Model download failed" : "模型没下载成功" }
+        return isEnglish
+            ? "Model download failed: \(reasons.joined(separator: "; "))"
+            : "模型没下载成功：\(reasons.joined(separator: "；"))"
+    }
+    func localModelNodeFailure(_ node: String, _ reason: String) -> String {
+        isEnglish ? "\(node): \(reason)" : "\(node)：\(reason)"
+    }
+    var localModelNodeChecksumMismatch: String {
+        isEnglish ? "the file failed verification" : "下来的文件校验不符"
+    }
+    var localModelProbeNoData: String { isEnglish ? "no data" : "没有数据" }
+    func localModelProbeTimeout(_ seconds: Int) -> String {
+        isEnglish ? "no connection within \(seconds) s" : "\(seconds) 秒没连上"
+    }
+    // 「下载节点」（PRODUCT_SCOPE 变更记录 2026-11-11）。
+    var localModelNodeLabel: String { isEnglish ? "Download Node" : "下载节点" }
+    var localModelNodeDetail: String {
+        isEnglish
+            ? "Every node serves the same file and each download is checked against its sha256. If a node drops or can't be reached, KEYI moves to the next one and resumes where it left off."
+            : "各节点下的是同一个文件，下完都校验 sha256；一个节点断了或连不上，自动换下一个，接着已下的部分下。"
+    }
+    func localModelNodeChoice(_ choice: String) -> String {
+        switch choice {
+        case LocalModelDownloadNodes.automatic:
+            isEnglish ? "Automatic: test nodes, use the fastest" : "自动：先测速，从最快的下"
+        case LocalModelDownloadNodes.custom:
+            isEnglish ? "Your own node" : "自建节点"
+        case LocalModelDownloadNodes.modelScope.id:
+            isEnglish ? "ModelScope · Mainland China" : "ModelScope · 中国大陆"
+        case LocalModelDownloadNodes.huggingFace.id:
+            isEnglish ? "Hugging Face · Global (US, Asia-Pacific, Europe)" : "Hugging Face · 全球（美区、亚太、欧洲）"
+        case LocalModelDownloadNodes.hfMirror.id:
+            isEnglish ? "HF-Mirror · Mainland China mirror (third party)" : "HF-Mirror · 中国大陆镜像（第三方）"
+        default:
+            choice
+        }
+    }
+    /// 界面上写节点名：自建节点按界面语言写。
+    func localModelNodeName(_ node: LocalModelDownloadNode) -> String {
+        node.id == LocalModelDownloadNodes.custom ? localModelNodeChoice(LocalModelDownloadNodes.custom) : node.name
+    }
+    var localModelCustomNodeLabel: String { isEnglish ? "Node Address" : "自建节点地址" }
+    var localModelCustomNodePrompt: String {
+        isEnglish ? "https://your-node/path/ (file name appended)" : "https://你的节点/路径/（模型文件名接在后面）"
+    }
+    func localModelCustomNodeReady(_ url: String) -> String {
+        isEnglish ? "Downloads start here: \(url); built-in nodes are the fallback."
+            : "会先从这里下：\(url)；不行再换内置节点。"
+    }
+    var localModelCustomNodeInvalid: String {
+        isEnglish ? "Use an https:// address without “?”. Until then, downloads use Automatic."
+            : "地址要以 https:// 开头、不带「?」；填好之前按「自动」下载。"
+    }
     var localModelLoading: String { isEnglish ? "Loading model…" : "正在加载模型…" }
     var localModelReady: String { isEnglish ? "Model ready" : "模型已就绪" }
     func localModelTierSummary(_ tier: LocalTranslationModelTier) -> String {

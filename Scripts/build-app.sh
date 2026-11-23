@@ -39,11 +39,12 @@ EOF
 else
     # 用本机的 Apple Development 证书（有 Team ID，钥匙串按团队认程序，重装不再弹授权）；
     # 没有时退回 ad-hoc。不取钥匙串里排第一的任意身份：那样会签成别的工具的自签名证书。
+    # 按证书的 SHA-1 指纹签：钥匙串里有两张同名证书时（2026-11-10 起就是这样）按名字签会报 ambiguous。
     if [[ -n "${KEYI_SIGNING_IDENTITY:-}" ]]; then
         SIGNING_IDENTITY="$KEYI_SIGNING_IDENTITY"
     else
         SIGNING_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
-            | sed -nE 's/^[[:space:]]*[0-9]+\)[[:space:]]+[0-9A-F]+[[:space:]]+"(Apple Development: .*)"$/\1/p' \
+            | sed -nE 's/^[[:space:]]*[0-9]+\)[[:space:]]+([0-9A-F]{40})[[:space:]]+"Apple Development: .*"$/\1/p' \
             | head -n 1 || true)"
         if [[ -z "$SIGNING_IDENTITY" ]]; then
             echo "提示：没找到 Apple Development 证书，改用 ad-hoc 签名；重装后钥匙串可能再次请求授权。" >&2

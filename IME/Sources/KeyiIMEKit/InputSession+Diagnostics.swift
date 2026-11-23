@@ -1,4 +1,5 @@
 import InputMethodKit
+import KEYITranslationClient
 import KeyiIMEBridge
 
 /// 只给诊断与自动检查用的钩子（Objective-C 选择器 keyiDiagnostic*），正式输入路径不调用。
@@ -30,12 +31,18 @@ extension InputSession {
     /// which only the diagnostics script sets, so the real input method cannot
     /// enable it by accident. Commands: `install`, `hold`, `release`, `secure:0|1`,
     /// `auto:0|1`, `mouse:down` (a mouse click now; after `install` only these count),
+    /// `reply:<text>` (the fake answers with this text instead of `EN(<source>)`; `reply:` clears it),
     /// `requests` (returns the sources the fake translator was asked for).
     @objc(keyiDiagnosticFakeCommand:)
     func diagnosticFakeCommand(_ command: String) -> String {
         guard KeyiDiagnosticFakeTranslator.isAllowed else { return "refused" }
         if command.hasPrefix("dictation:") {
             return diagnosticDictationCommand(String(command.dropFirst("dictation:".count)))
+        }
+        if command.hasPrefix("reply:") {
+            let reply = String(command.dropFirst("reply:".count))
+            diagnosticFakeTranslator?.fixedReply = reply.isEmpty ? nil : reply
+            return "ok"
         }
         switch command {
         case "install":
@@ -70,6 +77,25 @@ extension InputSession {
         if command == "install" {
             diagnosticFakeDictation = KeyiDiagnosticFakeDictation()
             return "ok"
+        }
+        if command.hasPrefix("key:") {
+            // key:default 回到真实设置；key:<键码>:<修饰键原始值>:<字> 临时换说话键（不存）。
+            let parts = command.dropFirst(4).split(separator: ":", omittingEmptySubsequences: false)
+            if parts.first == "default" {
+                KeyiDictationKey.diagnosticOverride = nil
+            } else if parts.count >= 2, let code = UInt16(parts[0]), let mods = UInt(parts[1]) {
+                KeyiDictationKey.diagnosticOverride = KEYIDictationShortcut(
+                    keyCode: code,
+                    modifiers: NSEvent.ModifierFlags(rawValue: mods),
+                    keyLabel: parts.count > 2 ? String(parts[2]) : ""
+                )
+            } else {
+                return "bad key"
+            }
+            return KeyiDictationKey.current.displayName()
+        }
+        if command == "events" {
+            return String(recognizedEvents(client: nil))
         }
         guard let fake = diagnosticFakeDictation else { return "not installed" }
         if command.hasPrefix("say:") {

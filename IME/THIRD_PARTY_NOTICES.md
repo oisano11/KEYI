@@ -19,6 +19,7 @@
 | 雾凇拼音（rime-ice）词库 | KEYI 当前 active 的成熟全拼词库：8105 字表、base、ext、tencent、others | https://github.com/iDvel/rime-ice，commit `99662ba01e3affa6a0f009174ca530b887bac3b6`；词库来源、整理者和逐项许可见随包 `RimeData/CREDITS.rime-ice.md` | 依文件/来源而异；随包保留上游 GPL-3.0 文本及来源声明，另含 Unicode、MIT、Public Domain、LGPL-3.0、CC BY 3.0 等上游条款 |
 | SCOWL 英文词表（中英混输） | 10/20/35/40 级常用英文词，生成 `RimeData/english/scowl.dict.yaml` | SCOWL 2020.12.07（Kevin Atkinson），http://wordlist.aspell.net/ | 允许使用、修改、分发、出售，须保留版权声明（随包 `RimeData/english/LICENSE.scowl`） |
 | 雾凇拼音英文补充词表 | 缩写与技术词 `RimeData/english/en_ext.dict.yaml` | https://github.com/iDvel/rime-ice，commit 同上 | GPL-3.0 |
+| wordfreq 英文词频（英文联想） | 给打前几个字母时的英文联想排序，生成 `RimeData/english/hint.dict.yaml`（词频文件本身不随包） | https://github.com/rspeer/wordfreq（Robyn Speer），commit `912caf64b657478d1dff1138efdc078947d54bb1` | 数据 CC BY-SA 4.0，可商用、须署名（含 SUBTLEX，Marc Brysbaert 等）；生成的 `hint.dict.yaml` 同样按 CC BY-SA 4.0，署名声明随包 `RimeData/english/LICENSE.wordfreq.md` |
 | 雾凇拼音配置许可 | 随包 `RimeData/LICENSE.rime-ice-GPL-3.0` | 上游仓库的配置/方案许可原文，版本固定为上述 commit | GPL-3.0 |
 | SenseVoice-Small（语音输入识别模型） | 按住右 ⌥ 说话时把普通话（含中英混说）转成文字，随包为 `Contents/Resources/SenseVoice/model.int8.onnx` 与 `tokens.txt` | 阿里 FunAudioLLM https://github.com/FunAudioLLM/SenseVoice ；sherpa-onnx 转换的 int8 版 `sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2`（k2-fsa/sherpa-onnx `asr-models` 发布），SHA-256 `7d1efa21…dfd347e` | FunASR 模型开源协议 1.1（可使用、复制、修改、分享，须注明来源与作者并保留模型名；原文随包 `SenseVoice/MODEL_LICENSE`） |
 | sherpa-onnx | 运行 SenseVoice 的推理库，随包为 `Contents/Frameworks/libsherpa-onnx-c-api.dylib`，运行时 `dlopen` | https://github.com/k2-fsa/sherpa-onnx v2.0.1，发布档 `sherpa-onnx-v2.0.1-osx-arm64-shared.tar.bz2`，SHA-256 `5e874d3c…edb69f84`；C API 头文件随源码在 `Vendor/sherpa-onnx/include` | Apache-2.0（随包 `licenses/sherpa-onnx-Apache2.txt`） |
@@ -54,6 +55,7 @@
 - `Contents/Resources/RimeData/LICENSE.rime-ice-GPL-3.0`（雾凇拼音上游配置许可，GPL-3.0）
 - `Contents/Resources/RimeData/CREDITS.rime-ice.md`（雾凇拼音词库来源与归属）
 - `Contents/Resources/RimeData/english/LICENSE.scowl`（SCOWL 英文词表版权与许可）
+- `Contents/Resources/RimeData/english/LICENSE.wordfreq.md`（wordfreq 词频署名与许可，英文联想词表按 CC BY-SA 4.0）
 - `Contents/Resources/KEYI-LICENSE.md`（KEYI 自身，Apache-2.0）
 - `Contents/Resources/licenses/`：上表静态传递依赖的逐项许可**原文**，取自各自
   固定 commit（Boost 取官方 BSL-1.0 原文），文件名与来源对照见 `SOURCES.md`

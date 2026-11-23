@@ -60,6 +60,7 @@ extern "C" NSInteger KeyiUTF16OffsetForUTF8Prefix(NSString *preedit,
 @property(nonatomic, copy, readwrite, nullable) NSString *commitText;
 @property(nonatomic, readwrite) NSInteger highlightedCandidateIndex;
 @property(nonatomic, readwrite) NSInteger cursorPosition;
+@property(nonatomic, copy, readwrite) NSString *commitTextPreview;
 
 @end
 
@@ -79,6 +80,7 @@ extern "C" NSInteger KeyiUTF16OffsetForUTF8Prefix(NSString *preedit,
   result.commitText = commitText;
   result.highlightedCandidateIndex = highlightedCandidateIndex;
   result.cursorPosition = cursorPosition;
+  result.commitTextPreview = @"";
   return result;
 }
 
@@ -99,6 +101,7 @@ static KeyiRimeResult *BridgeResult(const keyi::RimeResult& result) {
     bridged.commitText = ToNSString(*result.commit);
   }
   bridged.highlightedCandidateIndex = result.highlighted_candidate_index;
+  bridged.commitTextPreview = ToNSString(result.commit_preview);
   if (!result.has_cursor) {
     bridged.cursorPosition = NSNotFound;
   } else {
@@ -164,6 +167,13 @@ static KeyiRimeResult *EmptyResult(void) {
                                           static_cast<int>(modifiers)));
 }
 
+- (KeyiRimeResult *)setInput:(NSString *)input {
+  if (!_engine) {
+    return EmptyResult();
+  }
+  return BridgeResult(_engine->SetInput(std::string(input.UTF8String ?: "")));
+}
+
 - (KeyiRimeResult *)changeCandidatePageBackward:(BOOL)backward {
   return _engine ? BridgeResult(_engine->ChangeCandidatePage(backward))
                  : EmptyResult();
@@ -172,6 +182,26 @@ static KeyiRimeResult *EmptyResult(void) {
 - (KeyiRimeResult *)selectVisibleCandidateAtIndex:(NSInteger)index {
   return _engine
              ? BridgeResult(_engine->SelectVisibleCandidate(
+                   static_cast<int>(index)))
+             : EmptyResult();
+}
+
+- (NSArray<NSString *> *)candidatesFromPageOffset:(NSInteger)offset
+                                            limit:(NSInteger)limit {
+  NSMutableArray<NSString *> *candidates = [NSMutableArray array];
+  if (!_engine) {
+    return candidates;
+  }
+  for (const auto& candidate : _engine->CandidatesFromPage(
+           static_cast<int>(offset), static_cast<int>(limit))) {
+    [candidates addObject:ToNSString(candidate)];
+  }
+  return candidates;
+}
+
+- (KeyiRimeResult *)selectCandidateFromPageAtIndex:(NSInteger)index {
+  return _engine
+             ? BridgeResult(_engine->SelectCandidateFromPage(
                    static_cast<int>(index)))
              : EmptyResult();
 }

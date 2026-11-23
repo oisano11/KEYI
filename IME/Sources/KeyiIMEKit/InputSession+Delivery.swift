@@ -19,13 +19,15 @@ extension InputSession {
         // marked text with a separate empty setMarkedText first would relocate
         // the insertion point and can deliver the text twice.
         client.insertText(text, replacementRange: markedRange)
+        noteTyped(text, client: client)
+        keyCommitLog? += text
         KeyiCandidatePanel.hideForSession(owner: ownerIdentifier)
     }
 
     /// Commits the pinyin letters. With `joiningHeldSentence` (Enter while typing
     /// pinyin) the letters join the held sentence when the controller owns it.
     func commitRawInput(client: any IMKTextInput, joiningHeldSentence: Bool = false) {
-        let rawInput = rimeSession.rawInput
+        let rawInput = stripAddressShownPrefix(rimeSession.rawInput)
         if rawInput.isEmpty {
             clearComposition(updateClient: true, client: client)
             return
@@ -63,6 +65,7 @@ extension InputSession {
     }
 
     func resetCompositionState() {
+        addressShownPrefix = ""
         currentPreedit = ""
         currentCandidates = []
         displayOrder = nil
@@ -74,6 +77,7 @@ extension InputSession {
     }
 
     func releaseCompositionOwnership() {
+        addressShownPrefix = ""
         currentPreedit = ""
         currentCandidates = []
         displayOrder = nil
@@ -99,10 +103,11 @@ extension InputSession {
         if markedRange.location != NSNotFound, markedRange.length > 0 {
             reportedStart = Self.lineRect(client: client, index: markedRange.location)
             // The marked text is the held sentences followed by the pinyin.
-            anchorIndex = markedRange.location + min(
-                max(automaticTranslation.heldText.utf16count + candidateCursor - 1, 0),
-                markedRange.length - 1
-            )
+            // 不带前缀的网址那一项高亮时整段画成网址，面板跟着末尾。
+            let caretInMarked = domainOfferMarkedText(client: client) != nil
+                ? markedRange.length
+                : automaticTranslation.heldText.utf16count + candidateCursor
+            anchorIndex = markedRange.location + min(max(caretInMarked - 1, 0), markedRange.length - 1)
         } else {
             let selectedRange = client.selectedRange()
             anchorIndex = selectedRange.location == NSNotFound

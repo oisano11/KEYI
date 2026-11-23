@@ -131,7 +131,8 @@ enum KeyiRimeKeyMapper {
 
     /// Classifies a key for the automatic translation controller (used while it
     /// holds text and no pinyin is being typed). Returns nil for ordinary
-    /// printable keys, which go through Rime as before.
+    /// printable keys, which go through Rime as before. Space is classified too:
+    /// with text held it keeps the Chinese; while pinyin is typed it still selects.
     ///
     /// `rimeKey` is nil for keys the Rime mapper does not know (Home, End,
     /// function keys, non-ASCII input); those never reach the engine.
@@ -162,6 +163,8 @@ enum KeyiRimeKeyMapper {
         switch rimeKey {
         case backspace: return .backspace
         case escape: return .escape
+        // 空格：有暂存时保留中文；没暂存时控制器交还，照常交给 Rime。
+        case space: return .space
         case tab, leftArrow, rightArrow, upArrow, downArrow, pageUp, pageDown, deleteForward:
             return .navigation
         default:

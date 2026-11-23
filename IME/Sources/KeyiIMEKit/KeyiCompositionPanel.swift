@@ -25,7 +25,7 @@ final class KeyiCompositionPanel {
         var source: String
         var translation: String?
         var hint: KeyiAutomaticTranslationHint
-        /// 按住右 ⌥ 说话中：译文那行写「正在听…」，底栏写松开结束。
+        /// 按住说话键说话中：译文那行写「正在听…」，底栏写松开结束。
         var listening = false
         /// 说话中底栏右边写的识别引擎（如「本机 SenseVoice」「阿里云 Fun-ASR」）。
         var listeningEngine: String?

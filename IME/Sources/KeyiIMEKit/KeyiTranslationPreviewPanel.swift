@@ -50,7 +50,7 @@ final class KeyiTranslationPreviewContentView: NSView {
     private var hintKind = KeyiAutomaticTranslationHint.enterConverts
     private var style = KEYITranslationStyle.natural
     private var engineLabel: String?
-    /// 按住右 ⌥ 说话中（语音输入）。
+    /// 按住说话键说话中（语音输入）。
     private var listening = false
     private var listeningEngine: String?
     private var listeningCloud = false
@@ -195,17 +195,17 @@ final class KeyiTranslationPreviewContentView: NSView {
         Self.height(of: translationDisplay, font: translationFontInUse, width: width)
     }
 
-    /// 此刻按回车会做什么：等英文时、翻译失败后，回车都是「保留中文」。单按 Shift（或 Esc）随时保留中文。
+    /// 此刻按回车会做什么：等英文时、翻译失败后，回车都是「保留中文」。空格（或 Esc）随时保留中文。
     /// 文案照契约原文（翻译失败与等英文同一句，2026-11-04 用户：「统一成「再按」」），按键名画成键帽。
     private var hintParts: [HintPart] {
         if listening {
-            return [.text("说完松开"), .key("右 ⌥"), .separator, .text("按其他键取消")]
+            return [.text("说完松开"), .key(KeyiDictationKey.current.displayName()), .separator, .text("按其他键取消")]
         }
         return switch hintKind {
         case .enterConverts:
-            [.key("回车"), .text("换英文（\(style.chineseName)）"), .separator, .key("Shift"), .text("保留中文")]
+            [.key("回车"), .text("换英文（\(style.chineseName)）"), .separator, .key("空格"), .text("保留中文")]
         case .waiting, .failed:
-            [.text("再按"), .key("回车"), .text("或"), .key("Shift"), .text("保留中文")]
+            [.text("再按"), .key("回车"), .text("或"), .key("空格"), .text("保留中文")]
         }
     }
 

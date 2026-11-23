@@ -118,12 +118,24 @@ extension KeyiAutomaticTranslationController {
     }
   }
 
-  /// 拼音为空时的回车、退格、Esc、导航键与组合键。
+  /// 暂存段末尾正好是 `text` 时删掉它（不带前缀的网址：「百度。」改回照打的 baidu.），
+  /// 和逐个退格一样，删进在等的句子会让它回到打字中。末尾不是它时什么都不做，返回 false。
+  @discardableResult
+  public func dropHeldSuffix(_ text: String) -> Bool {
+    onQueue {
+      guard !text.isEmpty, heldTextLocked.hasSuffix(text) else { return false }
+      for _ in 0..<text.count { deleteLastHeldCharacterLocked() }
+      flushLocked()
+      return true
+    }
+  }
+
+  /// 拼音为空时的回车、退格、Esc、空格、导航键与组合键。
   public func handleKey(_ key: KeyiAutomaticTranslationKey) -> KeyiAutomaticTranslationKeyResult {
     onQueue {
       if !sentences.isEmpty, settleForSecureInputLocked() {
         // 暂存的中文刚按原样上屏。回车和 Esc 本来就是用来结束这句的，吞掉；
-        // 其余键作用在已上屏的文字上，和普通拼音输入一样交给应用。
+        // 其余键（含空格）作用在已上屏的文字上，和普通拼音输入一样交给应用。
         // 之后没有暂存了，下一下回车按普通规则交给应用。
         return key == .enter || key == .escape ? .consumed : .passOn
       }

@@ -10,7 +10,7 @@ struct StatusItemLabel: View {
         Label {
             Text(model.strings.appName)
         } icon: {
-            Image(nsImage: KEYIBirdMark.menuBarImage)
+            Image(nsImage: KEYIMark.menuBarImage)
         }
     }
 }

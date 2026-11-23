@@ -63,11 +63,13 @@ final class KeyiDiagnosticFakeTranslator {
 
     private final class Ticket: KeyiTranslationCancellable {
         let source: String
+        let reply: String?
         let completion: @Sendable (Result<String, Error>) -> Void
         var cancelled = false
 
-        init(source: String, completion: @escaping @Sendable (Result<String, Error>) -> Void) {
+        init(source: String, reply: String?, completion: @escaping @Sendable (Result<String, Error>) -> Void) {
             self.source = source
+            self.reply = reply
             self.completion = completion
         }
 
@@ -75,6 +77,8 @@ final class KeyiDiagnosticFakeTranslator {
     }
 
     var holding = false
+    /// `reply:<text>`: answer with this text instead of `EN(<source>)` (`reply:` clears it).
+    var fixedReply: String?
     private(set) var requests: [String] = []
     private var pending: [Ticket] = []
 
@@ -85,7 +89,7 @@ final class KeyiDiagnosticFakeTranslator {
         completion: @escaping @Sendable (Result<String, Error>) -> Void
     ) -> KeyiTranslationCancellable {
         requests.append(request.text)
-        let ticket = Ticket(source: request.text, completion: completion)
+        let ticket = Ticket(source: request.text, reply: fixedReply, completion: completion)
         if holding {
             pending.append(ticket)
         } else {
@@ -105,6 +109,6 @@ final class KeyiDiagnosticFakeTranslator {
 
     private static func finish(_ ticket: Ticket) {
         guard !ticket.cancelled else { return }
-        ticket.completion(.success(english(for: ticket.source)))
+        ticket.completion(.success(ticket.reply ?? english(for: ticket.source)))
     }
 }

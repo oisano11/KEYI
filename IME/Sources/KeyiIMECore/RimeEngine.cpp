@@ -236,6 +236,7 @@ struct RimeEngine::Implementation {
       result.cursor_byte_offset =
           ClampedByteOffset(result.preedit, context.composition.cursor_pos);
       result.has_cursor = true;
+      result.commit_preview = CopyCString(context.commit_text_preview);
       const int absolute_highlight =
           context.menu.page_no * context.menu.page_size +
           context.menu.highlighted_candidate_index;
@@ -313,6 +314,18 @@ RimeResult RimeEngine::ProcessKey(int keycode, int modifiers) {
   return implementation_->Snapshot(handled);
 }
 
+RimeResult RimeEngine::SetInput(const std::string& input) {
+  if (!ready()) {
+    return {};
+  }
+  std::lock_guard<std::mutex> lock(implementation_->runtime.mutex());
+  implementation_->EnsureSession();
+  implementation_->candidate_offset = 0;
+  const bool handled = implementation_->runtime.api()->set_input(
+      implementation_->session_id, input.c_str());
+  return implementation_->Snapshot(handled);
+}
+
 RimeResult RimeEngine::ChangeCandidatePage(bool backward) {
   if (!ready()) {
     return {};
@@ -357,6 +370,38 @@ RimeResult RimeEngine::SelectVisibleCandidate(int index) {
       state.session_id, state.candidate_offset + index);
   // Selecting a single-syllable candidate advances Rime to the next segment
   // without committing; that new context starts on its own first page.
+  if (handled) {
+    state.candidate_offset = 0;
+  }
+  return state.Snapshot(handled);
+}
+
+std::vector<std::string> RimeEngine::CandidatesFromPage(int from, int limit) {
+  if (!ready() || from < 0) {
+    return {};
+  }
+  std::lock_guard<std::mutex> lock(implementation_->runtime.mutex());
+  implementation_->EnsureSession();
+  auto& state = *implementation_;
+  return state.CandidatesFrom(state.candidate_offset + from, limit);
+}
+
+RimeResult RimeEngine::SelectCandidateFromPage(int index) {
+  if (!ready()) {
+    return {};
+  }
+  std::lock_guard<std::mutex> lock(implementation_->runtime.mutex());
+  implementation_->EnsureSession();
+  auto& state = *implementation_;
+  if (state.CandidatesFrom(state.candidate_offset, 1).empty()) {
+    return state.Snapshot(false);
+  }
+  if (index < 0 ||
+      state.CandidatesFrom(state.candidate_offset + index, 1).empty()) {
+    return state.Snapshot(true);
+  }
+  const bool handled = state.runtime.api()->select_candidate(
+      state.session_id, state.candidate_offset + index);
   if (handled) {
     state.candidate_offset = 0;
   }

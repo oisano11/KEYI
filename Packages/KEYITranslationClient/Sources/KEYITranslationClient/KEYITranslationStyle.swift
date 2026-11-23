@@ -98,11 +98,13 @@ public enum KEYITranslationStyle: String, CaseIterable, Sendable {
             preferencesDomain as CFString
         )
         CFPreferencesAppSynchronize(preferencesDomain as CFString)
+#if os(macOS)
         DistributedNotificationCenter.default().postNotificationName(
             didChangeNotification,
             object: nil,
             userInfo: nil,
             deliverImmediately: true
         )
+#endif
     }
 }

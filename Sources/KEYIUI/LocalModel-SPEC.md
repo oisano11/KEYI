@@ -24,10 +24,32 @@ tags:
 ## 模型与下载
 
 - 两档：轻量 Q4_K_M（只直译）、标准 Q8_0（把场景、英语风格和输入框上下文写进提示词）。清单固定
-  revision、字节数和 sha256，ModelScope 优先、Hugging Face 备用。
+  revision、字节数和 sha256。
 - 只在用户点「下载」时下载，支持断点续传；字节数和 sha256 都对上才改名成正式文件，并记下文件身份。
   界面用 `isInstalled` 判断，不读文件内容。删除会连同半截文件和校验记录一起删。
 - 下载在 `AppModel` 里进行，关掉设置窗口不会中断；进度和失败原因按档位显示在设置里。
+
+### 下载节点（PRODUCT_SCOPE 变更记录 2026-11-11）
+
+用户「需要多节点部署设置，让亚太区和美区的用户都能快捷的下载」。规则与 Windows、Android 共用的 C# 库
+（`Windows/IME/KEYI.IME.Core/LocalModelNodes.cs`、`LocalModelDownload.cs`）一致；节点和计划在
+`KEYICore/LocalModelNodes.swift`，下载在 `LocalModelDownloader.swift`。
+
+- **节点**：ModelScope（中国大陆）、Hugging Face（全球：美区、亚太、欧洲）、HF-Mirror（中国大陆能连的 Hugging Face
+  镜像，第三方，同一 revision），以及用户自建节点（https 地址，不带 `?` `#`，末尾补「/」后接模型文件名）。
+  各节点下的必须是同一个文件，下完照样校验 sha256。KEYI 不自建服务器。
+- **自动（默认）**：同时给各节点从已下的位置往后各取 2 MB（`Range: bytes=起-止`）测速，每个最多等 12 秒；
+  到时取到一些按取到的算，一点没取到算连不上。能用的按速度从快到慢排，从最快的下。
+- **指定节点 / 自建节点**：它排第一、不测速；不行再给其余内置节点测速，从快的接着下。自建节点地址不对时按自动。
+- **换节点续传**：一个节点断了（含 60 秒收不到数据，即 URLSession 的 `timeoutIntervalForRequest`）、回非 2xx
+  或连不上，就换下一个，接着 `.partial` 已下的部分发 `Range: bytes=已下-`；校验不符删掉已下部分换下一个重下。
+  都不行时把每个节点的原因都报出来（`allNodesFailed`），不只报最后一个。
+- **User-Agent**：测速和下载请求都带 `KEYI-IME/1.0`（与 C# 版相同；ModelScope 的 CDN 拒绝不带 User-Agent 的请求）。
+- **设置**：「高级 › 翻译」本机模型下面一行「下载节点」：自动、ModelScope、Hugging Face、HF-Mirror、自建节点；
+  选自建节点时多一行地址框，下面一句写会先从哪里下，或地址哪里不对。存在 `translation.local.downloadNode`
+  （认不出的按自动）和 `translation.local.downloadCustomURL`；选了就存，下次点「下载」按它，不影响正在下的。
+- **界面与诊断**：下载中写「正在给各下载节点测速…」或「已下 / 总共，来自 某节点」。测速结果、从哪个节点下、
+  换节点的原因写进系统日志（子系统 `com.keyi.input-translator`，类别 `LocalModel`），只有节点名、速度和原因。
 
 ## 选择与运行
 

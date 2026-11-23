@@ -24,6 +24,10 @@ NSInteger KeyiUTF16OffsetForUTF8Prefix(NSString *preedit, NSInteger byteOffset);
 /// Caret offset inside the preedit, counted in UTF-16 units, or `NSNotFound`
 /// when the snapshot carried no composition.
 @property(nonatomic, readonly) NSInteger cursorPosition;
+/// librime's commit_text_preview: the composition as it would be committed now
+/// (highlighted candidate converted, the rest as typed). Empty without a
+/// composition. Only the touch keyboard (iOS) draws it inline.
+@property(nonatomic, copy, readonly) NSString *commitTextPreview;
 
 /// Builds a result from explicit values. Only the diagnostics use this: the
 /// real engine produces its snapshots from librime, but the session's
@@ -61,9 +65,20 @@ NSInteger KeyiUTF16OffsetForUTF8Prefix(NSString *preedit, NSInteger byteOffset);
 
 - (void)setCandidatePageSize:(NSInteger)pageSize;
 - (KeyiRimeResult *)processKey:(NSInteger)keyCode modifiers:(NSUInteger)modifiers;
+/// Replaces the whole input (librime set_input), e.g. with a bare web address.
+- (KeyiRimeResult *)setInput:(NSString *)input;
 - (KeyiRimeResult *)changeCandidatePageBackward:(BOOL)backward;
 - (KeyiRimeResult *)moveCandidateHighlight:(NSInteger)delta;
 - (KeyiRimeResult *)selectVisibleCandidateAtIndex:(NSInteger)index;
+/// Touch keyboards: the candidates after this page, `offset` counted from this
+/// page's first candidate (the page size is the next page's first).
+- (NSArray<NSString *> *)candidatesFromPageOffset:(NSInteger)offset
+                                            limit:(NSInteger)limit
+    NS_SWIFT_NAME(candidates(fromPageOffset:limit:));
+/// Selects the candidate `index` places after this page's first, also past
+/// the end of this page (a candidate swiped into view on a touch keyboard).
+- (KeyiRimeResult *)selectCandidateFromPageAtIndex:(NSInteger)index
+    NS_SWIFT_NAME(selectCandidateFromPage(at:));
 - (KeyiRimeResult *)selectHighlightedCandidate;
 /// Commits the composition as librime shows it: converted segments as Chinese,
 /// letters it cannot convert as typed.

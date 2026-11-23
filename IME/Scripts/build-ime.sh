@@ -94,7 +94,7 @@ cp "$PROJECT_ROOT/Vendor/sherpa-onnx/onnxruntime-LICENSE" "$APP_RESOURCES/licens
 ditto "$PROJECT_ROOT/resources/lproj" "$APP_RESOURCES"
 
 "$PROJECT_ROOT/Scripts/generate-icon.sh" "$APP_RESOURCES"
-# The app icon Finder shows is the same hummingbird as KEYI 可译 (one file, shared).
+# The app icon Finder shows is the same clasp mark as KEYI 可译 (one file, shared).
 cp "$PROJECT_ROOT/../AppBundle/KEYI.icns" "$APP_RESOURCES/KEYI.icns"
 
 chmod +x "$APP_MACOS/KEYIIME"

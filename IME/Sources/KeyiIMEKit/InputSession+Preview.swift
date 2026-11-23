@@ -51,6 +51,7 @@ extension InputSession {
                 isDeliveringToClient = true
                 client.insertText(commit, replacementRange: markedRange)
                 isDeliveringToClient = false
+                noteTyped(commit, client: client)
                 hasMarkedText = false
                 drawnHeldText = ""
             }
@@ -72,7 +73,9 @@ extension InputSession {
         needsRedraw = false
         let held = automaticTranslation.heldText
         let live = dictationLiveText
-        let text = held + currentPreedit + live
+        // 不带前缀的网址那一项高亮：画成选了它之后的样子（InputSession+BareDomain）。
+        let domain = live.isEmpty ? domainOfferMarkedText(client: client) : nil
+        let text = domain ?? (held + currentPreedit + live)
         let heldLength = held.utf16count
         defer {
             drawnHeldText = held
@@ -84,7 +87,7 @@ extension InputSession {
         }
         guard !text.isEmpty || hasMarkedText else { return }
         let length = text.utf16count
-        let caret = currentPreedit.isEmpty || !live.isEmpty
+        let caret = currentPreedit.isEmpty || !live.isEmpty || domain != nil
             ? length
             : heldLength + min(max(candidateCursor, 0), currentPreedit.utf16count)
         // Once the client holds our marked text, the update must replace exactly

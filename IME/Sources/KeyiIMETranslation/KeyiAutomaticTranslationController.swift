@@ -22,6 +22,8 @@ public enum KeyiAutomaticTranslationKey: Equatable, Sendable {
   case enter
   case backspace
   case escape
+  /// 空格（含 Shift+空格）：有暂存时和 Esc 一样把整段原样上屏中文（用户 2026-11-23，代替单按 Shift）。
+  case space
   /// 方向键、Tab、Home/End、PgUp/PgDn、向前删除。
   case navigation
   /// 其他 ⌘/⌃/⌥ 组合键与功能键。
@@ -38,11 +40,11 @@ public enum KeyiAutomaticTranslationKeyResult: Equatable, Sendable {
 
 /// 浮层底部那一行：此刻按回车会发生什么。
 public enum KeyiAutomaticTranslationHint: Equatable, Sendable {
-  /// 回车换英文，单按 Shift（或 Esc）保留中文。
+  /// 回车换英文，空格（或 Esc）保留中文。
   case enterConverts
-  /// 按了回车、英文还没出来：再按回车或单按 Shift 保留中文。
+  /// 按了回车、英文还没出来：再按回车或空格保留中文。
   case waiting
-  /// 这段翻译失败：再按回车或单按 Shift 保留中文；接着打字后回车会整段重新翻译。带上失败原因，面板据此写一行说明。
+  /// 这段翻译失败：再按回车或空格保留中文；接着打字后回车会整段重新翻译。带上失败原因，面板据此写一行说明。
   case failed(KeyiAutomaticTranslationFailure.Kind)
 
   public var isFailed: Bool {

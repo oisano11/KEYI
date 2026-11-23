@@ -657,8 +657,12 @@ expect(
 for model in LocalTranslationModelCatalog.models {
     expect(model.sha256.count == 64 && model.byteCount > 1_000_000_000, "每档都应有完整的 sha256 和字节数: \(model.tier)")
     expect(
-        model.downloadURLs.map { $0.host() } == ["modelscope.cn", "huggingface.co"],
-        "下载来源应先 ModelScope 后 Hugging Face: \(model.tier)"
+        model.downloadURLs.map { $0.host() } == ["modelscope.cn", "huggingface.co", "hf-mirror.com"],
+        "内置下载节点是 ModelScope、Hugging Face、HF-Mirror: \(model.tier)"
+    )
+    expect(
+        model.downloadURLs == LocalModelDownloadNodes.builtIn.map { $0.url(for: model) },
+        "清单里的地址就是各内置节点上的同名文件: \(model.tier)"
     )
     expect(
         model.downloadURLs.allSatisfy { $0.lastPathComponent == model.fileName && $0.scheme == "https" },
@@ -666,6 +670,60 @@ for model in LocalTranslationModelCatalog.models {
     )
 }
 let lightModel = LocalTranslationModelCatalog.model(for: .light)
+
+// 下载节点（PRODUCT_SCOPE 变更记录 2026-11-11），规则与 C# 版 LocalModelNodes.cs 一致。
+expect(
+    LocalModelDownloadNodes.hfMirror.url(for: lightModel).absoluteString
+        == "https://hf-mirror.com/tencent/Hy-MT2-1.8B-GGUF/resolve/a0c709d9fac510f2c807aa3af52872340dc37a4a/Hy-MT2-1.8B-Q4_K_M.gguf",
+    "HF-Mirror 照 Hugging Face 的路径和 revision"
+)
+expect(
+    LocalModelDownloadNodes.huggingFace.baseURL.replacingOccurrences(of: "huggingface.co", with: "hf-mirror.com")
+        == LocalModelDownloadNodes.hfMirror.baseURL,
+    "HF-Mirror 与 Hugging Face 同一 revision"
+)
+expect(
+    LocalModelDownloadNodes.choices == ["auto", "modelscope", "huggingface", "hf-mirror", "custom"],
+    "设置里可选：自动、三个内置节点、自建节点"
+)
+expect(LocalModelDownloadNodes.plan(choice: nil, customURL: nil) == .automatic, "没选过按自动")
+expect(LocalModelDownloadNodes.plan(choice: "auto", customURL: "https://cdn.example.com/") == .automatic, "自动时不用自建地址")
+expect(LocalModelDownloadNodes.plan(choice: "nowhere", customURL: nil) == .automatic, "认不出的节点按自动")
+let pickedPlan = LocalModelDownloadNodes.plan(choice: "huggingface", customURL: nil)
+expect(
+    !pickedPlan.probeFirst && pickedPlan.nodes.map(\.id) == ["huggingface", "modelscope", "hf-mirror"],
+    "指定的节点排第一、不先测速，其余内置节点在后面"
+)
+let customPlan = LocalModelDownloadNodes.plan(choice: "custom", customURL: " https://cdn.example.com/keyi ")
+expect(
+    !customPlan.probeFirst && customPlan.nodes.count == 4
+        && customPlan.nodes[0].url(for: lightModel).absoluteString == "https://cdn.example.com/keyi/Hy-MT2-1.8B-Q4_K_M.gguf"
+        && customPlan.nodes.dropFirst().map(\.id) == ["modelscope", "huggingface", "hf-mirror"],
+    "自建节点补上「/」、文件名接在后面，排第一"
+)
+expect(
+    LocalModelDownloadNodes.customNode("https://cdn.example.com/keyi/")?.baseURL == "https://cdn.example.com/keyi/",
+    "末尾已有「/」不再补"
+)
+for bad in ["", "http://cdn.example.com/keyi/", "ftp://cdn.example.com/", "https:///keyi/", "https://cdn.example.com/keyi/?token=1",
+            "https://cdn.example.com/keyi/#x", "cdn.example.com/keyi/"] {
+    expect(LocalModelDownloadNodes.customNode(bad) == nil, "自建节点只收 https、不带 ? 和 #：\(bad)")
+    expect(LocalModelDownloadNodes.plan(choice: "custom", customURL: bad) == .automatic, "自建节点地址不对时按自动：\(bad)")
+}
+let fastProbe = LocalModelNodeProbe(node: LocalModelDownloadNodes.hfMirror, byteCount: 2 << 20, elapsed: 0.5, error: nil)
+let slowProbe = LocalModelNodeProbe(node: LocalModelDownloadNodes.modelScope, byteCount: 2 << 20, elapsed: 4, error: nil)
+let partialProbe = LocalModelNodeProbe(node: LocalModelDownloadNodes.huggingFace, byteCount: 100_000, elapsed: 12, error: nil)
+let deadProbe = LocalModelNodeProbe(node: LocalModelDownloadNodes.huggingFace, byteCount: 0, elapsed: 12, error: "12 秒没连上")
+expect(
+    LocalModelDownloadNodes.rank([slowProbe, deadProbe, fastProbe]) == [LocalModelDownloadNodes.hfMirror, LocalModelDownloadNodes.modelScope],
+    "能用的按速度从快到慢，不能用的不排进去"
+)
+expect(
+    LocalModelDownloadNodes.rank([partialProbe, slowProbe]).first == LocalModelDownloadNodes.modelScope,
+    "测速时间到只取到一点的节点排在后面"
+)
+expect(deadProbe.summary == "Hugging Face 不能用（12 秒没连上）", "不能用的节点写明原因")
+expect(fastProbe.summary == "HF-Mirror 2.0 MB 用了 0.5 秒（4.0 MB/s）", "测速结果写成和 C# 版同样的一句")
 let standardModel = LocalTranslationModelCatalog.model(for: .standard)
 expect(!lightModel.usesSceneContext && standardModel.usesSceneContext, "只有标准档写入场景和上下文")
 let hyMTSampling = LocalTranslationModelCatalog.sampling

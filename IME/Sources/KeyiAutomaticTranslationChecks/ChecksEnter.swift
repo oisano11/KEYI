@@ -33,6 +33,14 @@ func checkEnterConvertsThenPasses() {
     expectEqual(w.committed, "你好", "4: the late English is dropped")
     expectEqual(w.press(.enter), .passOn, "4: Enter after the Chinese commit goes to the app")
 
+    // 等英文时按空格：同再按回车，原样上屏中文（用户 2026-11-23 空格代替单按 Shift）。
+    let sp = Harness()
+    sp.confirm("你好")
+    sp.press(.enter)
+    expectEqual(sp.press(.space), .consumed, "4: space while waiting is not passed")
+    expectEqual(sp.committed, "你好", "4: space while waiting commits the Chinese as-is")
+    expect(sp.stub.wasCancelled(0), "4: space while waiting cancels the request")
+
     let s = Harness()
     s.confirm("你好")
     expectEqual(s.press(.enter), .consumed, "4: Shift+Enter behaves as Enter (first press swallowed)")

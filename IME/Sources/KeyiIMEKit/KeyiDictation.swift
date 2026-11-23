@@ -1,7 +1,9 @@
 import AppKit
+import KEYITranslationClient
 
-// 语音输入（契约 2026-11-07）：没在打拼音时按住右 ⌥ 说话，松开定稿。本文件只放与会话无关的部分：
-// 识别引擎接口、右 ⌥ 的按下/松开判定、识别文字整理、诊断替身。一次录音怎么选云端或本机见
+// 语音输入（契约 2026-11-07）：没在打拼音时按住说话键说话，松开定稿。说话键默认右 ⌥，用户在 KEYI 可译
+// 设置里自己设定（契约 2026-11-08，`KEYIDictationShortcut`）。本文件只放与会话无关的部分：
+// 识别引擎接口、现在用哪个说话键、识别文字整理、诊断替身。一次录音怎么选云端或本机见
 // `KeyiLiveDictation.swift`，本机识别是 KEYI 自带的 SenseVoice-Small（`KeyiSenseVoice.swift`）。
 // 会话怎么把文字画进下划线段、交给自动翻译，见 `InputSession+Dictation.swift`。
 
@@ -19,7 +21,7 @@ enum KeyiDictationFailure: Equatable {
     var message: String {
         switch self {
         case .microphonePending:
-            "允许 KEYI 输入法使用麦克风后，再按住右 ⌥ 说话"
+            "允许 KEYI 输入法使用麦克风后，再按住\(KeyiDictationKey.current.displayName())说话"
         case .microphoneDenied:
             "麦克风权限没开：系统设置 → 隐私与安全性 → 麦克风"
         case .modelUnavailable:
@@ -49,22 +51,28 @@ enum KeyiDictationEngines {
     }
 }
 
-/// 右 ⌥（Option）。flagsChanged 事件不吞，照常交给应用。
+/// 现在的说话键。存在 KEYI 可译偏好域里；KEYI 可译改了会发分布式通知，这里当场重读，
+/// 每次输入框激活时也重读一次，万一漏了通知也很快用上新键。诊断时可以临时换成别的键。
 enum KeyiDictationKey {
-    static let rightOption: UInt16 = 61
-    /// NX_DEVICELALTKEYMASK / NX_DEVICERALTKEYMASK：区分左右 ⌥ 的设备位。
-    private static let leftOptionDeviceBit: UInt = 0x20
-    private static let rightOptionDeviceBit: UInt = 0x40
-    static let modifiers: NSEvent.ModifierFlags = [.shift, .control, .option, .command, .function]
+    static var current: KEYIDictationShortcut { diagnosticOverride ?? stored }
 
-    /// 右 ⌥ 的 flagsChanged：true 按下，false 松开；别的键返回 nil。
-    static func rightOptionIsDown(keyCode: UInt16, rawFlags: UInt) -> Bool? {
-        guard keyCode == rightOption else { return nil }
-        if rawFlags & (leftOptionDeviceBit | rightOptionDeviceBit) != 0 {
-            return rawFlags & rightOptionDeviceBit != 0
+    /// Diagnostics-only: a voice key for the checks, never stored.
+    static var diagnosticOverride: KEYIDictationShortcut?
+
+    private static var stored = KEYIDictationShortcutSettings.shortcut
+    private static var observer: NSObjectProtocol?
+
+    /// 重读存的说话键；第一次调用时开始听 KEYI 可译的通知（整个进程只听一份）。
+    static func reload() {
+        stored = KEYIDictationShortcutSettings.shortcut
+        guard observer == nil else { return }
+        observer = DistributedNotificationCenter.default().addObserver(
+            forName: KEYIDictationShortcutSettings.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            stored = KEYIDictationShortcutSettings.shortcut
         }
-        // 不带左右设备位的事件（诊断替身、部分宿主）：只看 ⌥ 还在不在。
-        return NSEvent.ModifierFlags(rawValue: rawFlags).contains(.option)
     }
 }
 

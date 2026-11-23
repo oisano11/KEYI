@@ -22,6 +22,37 @@ extension InputSession {
         modifiers: UInt,
         client: any IMKTextInput
     ) -> Bool {
+        // 不带前缀的网址：打拼音时按 . 转出了什么记下来（InputSession+BareDomain）。
+        guard let label = domainLabelBeingClosed(key: key, modifiers: modifiers, client: client) else {
+            return processKeyInSession(key, modifiers: modifiers, client: client)
+        }
+        let heldBefore = automaticTranslation.heldText
+        let continuing = domainLabelsUsable(for: client)
+        keyCommitLog = ""
+        let handled = processKeyInSession(key, modifiers: modifiers, client: client)
+        let committed = keyCommitLog ?? ""
+        keyCommitLog = nil
+        if currentPreedit.isEmpty {
+            recordDomainLabel(
+                raw: label + ".",
+                heldBefore: heldBefore,
+                committed: committed,
+                continuing: continuing,
+                client: client
+            )
+        }
+        return handled
+    }
+
+    private func processKeyInSession(
+        _ key: Int,
+        modifiers: UInt,
+        client: any IMKTextInput
+    ) -> Bool {
+        // 英文后面的标点按英文出（用户 2026-11-08）；中文后面照旧交给 Rime 出中文标点。
+        if let handled = typeEnglishPunctuationIfNeeded(key, modifiers: modifiers, client: client) {
+            return handled
+        }
         // Text is held and no pinyin is being typed: printable keys Rime does not
         // handle (space, digits, capitals, symbols) join the held sentence.
         if currentPreedit.isEmpty, automaticTranslation.isHolding, key >= 0x20, key <= 0x7e {
@@ -47,6 +78,17 @@ extension InputSession {
             )
         }
 
+        // 正在打网址或邮箱（Rime recognizer，没有候选）：数字、= - ' 和其他符号照打进输入，不选候选、
+        // 不翻页；空格和回车一样，把整段照打的样子上屏（有暂存段时并进去）。
+        if KeyiPunctuationContext.isAddressInput(rimeSession.rawInput), modifiers & ~UInt(0b11) == 0 {
+            if key == KeyiRimeKeyMapper.space {
+                commitRawInput(client: client, joiningHeldSentence: true)
+                return true
+            }
+            if key > 0x20, key <= 0x7e {
+                return startOrContinueComposition(key: key, modifiers: modifiers, client: client)
+            }
+        }
         if let index = candidateIndex(forKey: key, modifiers: modifiers) {
             return selectCandidate(at: index, client: client)
         }
@@ -70,7 +112,11 @@ extension InputSession {
             return moveHighlight(by: -1, client: client)
         case KeyiRimeKeyMapper.return:
             // Raw pinyin: keep what the user typed instead of swallowing it. While
-            // text is held the letters join the sentence.
+            // text is held the letters join the sentence. 网址那一项高亮时照打的样子就是整段网址。
+            if isDomainOffer(at: highlightedIndex) {
+                acceptDomainOffer(client: client)
+                return true
+            }
             commitRawInput(client: client, joiningHeldSentence: true)
             return true
         case KeyiRimeKeyMapper.deleteForward:
@@ -148,7 +194,7 @@ extension InputSession {
         // Order matters: consume the commit first, then adopt whatever new
         // context the engine produced. A commit never erases a fresh
         // composition that followed it.
-        if let commit = result.commitText, !commit.isEmpty {
+        if let commit = result.commitText.map(stripAddressShownPrefix), !commit.isEmpty {
             diagnosticConfirmedCommit = commit
             Self.wordStats?.record(hanzi: KEYIDailyWordStats.hanziCount(in: commit))
             keyiAutomaticDebugLog("confirmed commit reaching automatic path utf16=\((commit as NSString).length)")
@@ -170,6 +216,19 @@ extension InputSession {
         candidateCursor = result.cursorPosition == NSNotFound
             ? currentPreedit.utf16count
             : result.cursorPosition
+        if !addressShownPrefix.isEmpty, !currentPreedit.isEmpty {
+            // 网址里已经上屏的开头（github.）不再画；退格删进它时整段作废。
+            let raw = rimeSession.rawInput
+            if raw.hasPrefix(addressShownPrefix), raw.count > addressShownPrefix.count,
+               currentPreedit.hasPrefix(addressShownPrefix)
+            {
+                currentPreedit = stripAddressShownPrefix(currentPreedit)
+                candidateCursor = max(candidateCursor - addressShownPrefix.utf16count, 0)
+            } else {
+                rimeSession.clear()
+                currentPreedit = ""
+            }
+        }
 
         if currentPreedit.isEmpty {
             // The engine dropped the composition without committing (for
@@ -188,6 +247,10 @@ extension InputSession {
         at index: Int,
         client: any IMKTextInput
     ) -> Bool {
+        if isDomainOffer(at: index) {
+            acceptDomainOffer(client: client)
+            return true
+        }
         let result = selectVisible(displayIndex: index, client: client)
         if !result.handled {
             // The engine refused the selection; echo the raw input so the
@@ -251,17 +314,13 @@ extension InputSession {
         } else {
             highlightedIndex = rimeHighlight
         }
+        placeDomainOffer(rimeCount: candidates.count, client: client)
     }
 
-    /// 中英混输：Rime 把完整的英文单词排在第一位。打的字母整段能拼成拼音时（men、long、change）
-    /// 用户多半在打中文，英文单词挪到这一页末尾；拼不成拼音时（model、github）英文留在第一位。
+    /// 中英混输的摆法（规则见 `KeyiPinyinSyllables.mixedEnglishOrder`，iOS 键盘共用同一份）。
     /// 返回 `result[显示位置] = Rime 页内位置`，不用调整时为 nil。
     static func mixedEnglishOrder(_ candidates: [String], input: String) -> [Int]? {
-        guard KeyiPinyinSyllables.spellsWholly(input) else { return nil }
-        let latin = candidates.map { $0.unicodeScalars.allSatisfy(\.isASCII) }
-        guard latin.contains(true), latin.contains(false) else { return nil }
-        let order = candidates.indices.filter { !latin[$0] } + candidates.indices.filter { latin[$0] }
-        return order == Array(candidates.indices) ? nil : order
+        KeyiPinyinSyllables.mixedEnglishOrder(candidates, input: input)
     }
 
     /// Selects the candidate shown at `index` and remembers the pick for this app.

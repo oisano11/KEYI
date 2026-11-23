@@ -1,10 +1,11 @@
 import Foundation
 import KEYICore
+import KEYITranslationClient
 import KEYITranslationService
 
 // 语音识别设置（契约「2026-11-07 云端语音识别授权」及其补充）：选本机 SenseVoice（默认）、阿里云
 // Fun-ASR 或豆包语音识别。阿里云要百炼 API Key（Keychain）和服务地址，豆包只要豆包语音控制台的
-// API Key（Keychain，地址固定）。输入法不读这里：按住右 ⌥ 时它问翻译服务，服务子进程按这里的设置
+// API Key（Keychain，地址固定）。输入法不读这里：按住说话键时它问翻译服务，服务子进程按这里的设置
 // 决定接不接、用哪家哪把 Key（`KEYISpeechTranscriptionProvider`）。
 
 public enum SpeechRecognitionEngine: String, CaseIterable, Sendable {
@@ -233,6 +234,8 @@ final class SpeechSettingsModel: ObservableObject {
     @Published private(set) var hasAPIKey: Bool
     @Published private(set) var endpoint: String
     @Published var status: Status = .none
+    /// 说话键（契约 2026-11-08）：存在共享偏好域，输入法收到通知当场换上。
+    @Published private(set) var dictationShortcut = KEYIDictationShortcutSettings.shortcut
 
     private var settings: SpeechRecognitionSettings
 
@@ -241,6 +244,14 @@ final class SpeechSettingsModel: ObservableObject {
         engine = settings.engine
         hasAPIKey = settings.hasAPIKey(for: settings.engine)
         endpoint = settings.endpoint
+    }
+
+    /// 换说话键；不能用的键不存，返回 false。
+    @discardableResult
+    func setDictationShortcut(_ shortcut: KEYIDictationShortcut) -> Bool {
+        guard KEYIDictationShortcutSettings.store(shortcut) else { return false }
+        dictationShortcut = KEYIDictationShortcutSettings.shortcut
+        return true
     }
 
     func select(_ engine: SpeechRecognitionEngine) {
@@ -278,13 +289,13 @@ final class SpeechSettingsModel: ObservableObject {
                 status = .failed(strings.speechKeyMissing)
                 return
             }
-            check(ready: strings.speechReady) { await AliyunFunASRStream.verify(configuration)?.message }
+            check(ready: strings.speechReady(key: dictationShortcut)) { await AliyunFunASRStream.verify(configuration)?.message }
         case .doubao:
             guard let configuration = settings.doubaoConfiguration() else {
                 status = .failed(strings.speechKeyMissing)
                 return
             }
-            check(ready: strings.speechReady) { await DoubaoASRStream.verify(configuration)?.message }
+            check(ready: strings.speechReady(key: dictationShortcut)) { await DoubaoASRStream.verify(configuration)?.message }
         }
     }
 
@@ -304,11 +315,14 @@ final class SpeechSettingsModel: ObservableObject {
 extension InterfaceStrings {
     var speechSection: String { isEnglish ? "Voice input" : "语音输入" }
     var speechEngineLabel: String { isEnglish ? "Recognition" : "语音识别" }
-    var speechEngineNote: String { isEnglish ? "hold right ⌥ to talk" : "按住右 ⌥ 说话" }
+    func speechKeyName(_ key: KEYIDictationShortcut) -> String { key.displayName(english: isEnglish) }
+    func speechEngineNote(key: KEYIDictationShortcut) -> String {
+        isEnglish ? "hold \(speechKeyName(key)) to talk" : "按住\(speechKeyName(key)) 说话"
+    }
     var speechEngineDetail: String {
         isEnglish
-            ? "Local SenseVoice runs on this Mac and never sends audio out. Aliyun Fun-ASR and Doubao recognize in the cloud and are more accurate on mixed Chinese and English; while you hold right ⌥ the audio goes to the one you pick, billed by duration (Aliyun about ¥1.2/hour; Doubao gives 20 free trial hours, then about ¥1/hour)."
-            : "本机 SenseVoice 在这台 Mac 上识别，声音不出本机。阿里云 Fun-ASR 和豆包语音识别在云端识别，中英混说更准；按住右 ⌥ 期间的声音发给所选的那一家，按时长计费（阿里云约 1.2 元/小时；豆包新开通送 20 小时试用，之后约 1 元/小时）。"
+            ? "Local SenseVoice runs on this Mac and never sends audio out. Aliyun Fun-ASR and Doubao recognize in the cloud and are more accurate on mixed Chinese and English; while you hold the talk key the audio goes to the one you pick, billed by duration (Aliyun about ¥1.2/hour; Doubao gives 20 free trial hours, then about ¥1/hour)."
+            : "本机 SenseVoice 在这台 Mac 上识别，声音不出本机。阿里云 Fun-ASR 和豆包语音识别在云端识别，中英混说更准；按住说话键期间的声音发给所选的那一家，按时长计费（阿里云约 1.2 元/小时；豆包新开通送 20 小时试用，之后约 1 元/小时）。"
     }
     func speechEngineName(_ engine: SpeechRecognitionEngine) -> String {
         switch engine {
@@ -347,7 +361,48 @@ extension InterfaceStrings {
         case .local, .aliyunFunASR: isEnglish ? "Checking with Aliyun…" : "正在连阿里云验证…"
         }
     }
-    var speechReady: String { isEnglish ? "Ready. Hold right ⌥ to talk." : "可以用了，按住右 ⌥ 说话" }
+    func speechReady(key: KEYIDictationShortcut) -> String {
+        isEnglish ? "Ready. Hold \(speechKeyName(key)) to talk." : "可以用了，按住\(speechKeyName(key)) 说话"
+    }
+    var speechKeyLabel: String { isEnglish ? "Talk key" : "说话键" }
+    var speechKeyNote: String { isEnglish ? "hold to talk, let go to finish" : "按住说话，松开结束" }
+    var speechKeyDetail: String {
+        isEnglish
+            ? "Click the key, then press the key you want. A single modifier (left or right ⌥, ⌘, ⌃, or Fn) still reaches the app as usual; ⌃, ⌥ or ⌘ plus a key, or F1–F20 on its own, belongs to KEYI Pinyin while it is the input source. For Fn, set System Settings › Keyboard › “Press 🌐 key to” to “Do Nothing”."
+            : "点一下按钮，再按想用的键。单个修饰键（左右 ⌥、⌘、⌃ 或 Fn）按下松开照常交给应用；⌃、⌥ 或 ⌘ 加一个键，或单独的 F1–F20，在用 KEYI 拼音时只给输入法。选 Fn 时，请把系统设置「键盘」里的「按下 🌐 键时」改成「不执行任何操作」。"
+    }
+    var speechKeyRecording: String { isEnglish ? "Press a key…" : "请按键…" }
+    var speechKeyRecordingNote: String { isEnglish ? "press the new talk key; Esc cancels" : "按下新的说话键，Esc 取消" }
+    func speechKeyReset(_ key: KEYIDictationShortcut) -> String {
+        isEnglish ? "Use \(speechKeyName(key))" : "恢复\(speechKeyName(key))"
+    }
+    func speechKeySaved(_ key: KEYIDictationShortcut) -> String {
+        isEnglish ? "Now hold \(speechKeyName(key)) to talk" : "已改成按住\(speechKeyName(key)) 说话"
+    }
+    func speechKeyProblem(_ problem: KEYIDictationShortcut.Problem, key: KEYIDictationShortcut) -> String {
+        let name = speechKeyName(key)
+        switch problem {
+        case .shift:
+            return isEnglish ? "\(name) can't be used: Shift is for capital letters" : "\(name)不能用：Shift 要用来打大写"
+        case .plainKey:
+            return isEnglish
+                ? "\(name) is for typing; add ⌃, ⌥ or ⌘ (F1–F20 work alone)"
+                : "\(name)要用来打字，请加上 ⌃、⌥ 或 ⌘（F1–F20 可以单独用）"
+        case .translationToggle:
+            return isEnglish ? "⌃⌥T turns automatic translation on and off; pick another" : "⌃⌥T 是自动翻译开关，换一个"
+        case .commandShortcut:
+            return isEnglish
+                ? "\(name) is usually an app shortcut; add ⌃ or ⌥"
+                : "\(name)多半是应用的快捷键（复制、粘贴等），请再加上 ⌃ 或 ⌥"
+        case .unsupported:
+            return isEnglish ? "\(name) can't be held to talk; pick another" : "\(name)不能按住说话，换一个"
+        }
+    }
+    func speechKeyTakenByHotKey(_ key: KEYIDictationShortcut) -> String {
+        isEnglish
+            ? "\(speechKeyName(key)) is already KEYI's translate shortcut; pick another"
+            : "\(speechKeyName(key))已经是 KEYI 可译的翻译快捷键，换一个"
+    }
     var speechKeyMissing: String { isEnglish ? "Fill in the API Key first" : "先填 API Key" }
     var speechCheckAgain: String { isEnglish ? "Check" : "验证" }
 }

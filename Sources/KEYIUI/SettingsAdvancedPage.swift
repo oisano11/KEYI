@@ -50,6 +50,8 @@ struct AdvancedPage: View {
                     }
                 }
                 SettingsDivider()
+                LocalModelNodeRows(model: model)
+                SettingsDivider()
                 CloudServiceInline(model: model)
                 SettingsDivider()
                 PersonalGlossaryRow(model: model)
@@ -327,6 +329,68 @@ private struct CandidateRowView: NSViewRepresentable {
     }
 }
 
+// MARK: - 本地模型下载节点
+
+/// 「下载节点」（PRODUCT_SCOPE 变更记录 2026-11-11：用户「需要多节点部署设置，让亚太区和美区的用户都能快捷的下载」，
+/// 与 Windows、Android 同一套）：默认自动测速；也可以指定一个内置节点，或填自己部署的节点地址。
+/// 选了就存，下次点「下载」按它（不影响正在下的）；指定的先用，不行再给其余的测速、接着下。
+private struct LocalModelNodeRows: View {
+    @ObservedObject var model: AppModel
+    @State private var customText = ""
+
+    var body: some View {
+        let strings = model.strings
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsRow(label: strings.localModelNodeLabel, help: strings.localModelNodeDetail) {
+                Picker(
+                    strings.localModelNodeLabel,
+                    selection: Binding(
+                        get: { model.localModelDownloadNode },
+                        set: { model.selectLocalModelDownloadNode($0) }
+                    )
+                ) {
+                    ForEach(LocalModelDownloadNodes.choices, id: \.self) { choice in
+                        Text(strings.localModelNodeChoice(choice)).tag(choice)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+            if model.localModelDownloadNode == LocalModelDownloadNodes.custom {
+                let saved = LocalModelDownloadNodes.customNode(model.localModelDownloadCustomURL)
+                SettingsDivider()
+                SettingsRow(
+                    label: strings.localModelCustomNodeLabel,
+                    detail: saved.map {
+                        strings.localModelCustomNodeReady($0.url(for: LocalTranslationModelCatalog.models[0]).absoluteString)
+                    } ?? strings.localModelCustomNodeInvalid,
+                    detailColor: saved == nil && !model.localModelDownloadCustomURL.isEmpty ? KEYIPalette.danger : KEYIPalette.ink2
+                ) {
+                    HStack(spacing: 8) {
+                        TextField(
+                            strings.localModelCustomNodeLabel,
+                            text: $customText,
+                            prompt: Text(strings.localModelCustomNodePrompt)
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .labelsHidden()
+                        .frame(width: 280)
+                        .onSubmit { model.setLocalModelDownloadCustomURL(customText) }
+                        if customChanged {
+                            Button(strings.save) { model.setLocalModelDownloadCustomURL(customText) }
+                        }
+                    }
+                }
+            }
+        }
+        .onAppear { customText = model.localModelDownloadCustomURL }
+    }
+
+    private var customChanged: Bool {
+        customText.trimmingCharacters(in: .whitespacesAndNewlines) != model.localModelDownloadCustomURL
+    }
+}
+
 // MARK: - 本地模型档位
 
 /// 本机模型一行右边：轻量、标准两档按钮，在用的那档描边并写「正在使用」；没下载的档位点了就下载并在下完后使用。
@@ -342,7 +406,9 @@ private struct LocalModelControl: View {
                 ProgressView(value: Double(bytes), total: Double(total))
                     .tint(KEYIPalette.local)
                     .frame(width: 110)
-                Text(strings.localModelDownloading(byteText(bytes), byteText(total)))
+                Text(model.localModelDownloadSources[tier].map {
+                    strings.localModelDownloadingFrom(byteText(bytes), byteText(total), $0)
+                } ?? strings.localModelProbingNodes)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()

@@ -22,6 +22,10 @@ struct RimeResult {
   /// True when the snapshot carried a composition, so `cursor_byte_offset` is
   /// meaningful.
   bool has_cursor = false;
+  /// librime's commit_text_preview: the composition as it would be committed
+  /// now (highlighted candidate converted, the rest as typed). The touch
+  /// keyboard (iOS) draws this inline; macOS does not use it.
+  std::string commit_preview;
 };
 
 /// Minimal librime wrapper: one engine instance owns exactly one Rime
@@ -41,9 +45,19 @@ class RimeEngine {
 
   void SetCandidatePageSize(int page_size);
   RimeResult ProcessKey(int keycode, int modifiers);
+  // Replaces the whole input (librime set_input), e.g. a bare web address the
+  // session recognised after the fact; patterns then keep it as typed.
+  RimeResult SetInput(const std::string& input);
   RimeResult ChangeCandidatePage(bool backward);
   RimeResult MoveCandidateHighlight(int delta);
   RimeResult SelectVisibleCandidate(int index);
+  // Touch keyboards keep listing the candidates after this page in the same
+  // row (the user swipes through them). `from` counts from the first
+  // candidate of this page, so `from == page size` is the next page's first.
+  std::vector<std::string> CandidatesFromPage(int from, int limit);
+  // Selects the candidate `index` places after this page's first one, also
+  // past the end of this page; out of range does nothing (handled).
+  RimeResult SelectCandidateFromPage(int index);
   RimeResult SelectHighlightedCandidate();
   /// Commits the whole composition the way librime does: each segment as its
   /// selected (or highlighted) candidate, text with no candidate as typed.

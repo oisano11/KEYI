@@ -45,8 +45,12 @@ CI 机器上逐条断言。
 - **提示词组装**（`TranslationPromptBuilder`）：云端提供方用系统提示加用户提示；用户内容以 JSON
   载荷注入，源文一律当作内容而非指令。
 - **本地模型清单与提示词**（`LocalTranslationModelCatalog`、`HyMTPromptBuilder`）：两档 Hy-MT2-1.8B
-  GGUF（轻量 Q4_K_M、标准 Q8_0）的文件名、字节数、sha256、固定 revision 的下载地址（ModelScope
-  在前、Hugging Face 在后），以及官方推荐的采样参数。清单只是数据，Windows 版照抄同一份。
+  GGUF（轻量 Q4_K_M、标准 Q8_0）的文件名、字节数、sha256、固定 revision 的下载地址（各内置下载节点
+  上的同名文件），以及官方推荐的采样参数。清单只是数据，Windows 版照抄同一份。
+- **下载节点**（`LocalModelDownloadNodes`，`LocalModelNodes.swift`，规则与 C# `LocalModelNodes.cs` 一致）：
+  内置 ModelScope、Hugging Face、HF-Mirror（同一 revision、同一 sha256）；自建节点只收 https、不带 `?` `#`，
+  末尾补「/」后接文件名；`plan` 自动时全部内置节点先测速，指定的（或自建节点）排第一、不测速，地址不对时按自动；
+  `rank` 只排能用的、按速度从快到慢。
   Hy-MT2 没有系统提示，所以本地请求只有一条 user 消息，源文直接嵌入官方中文模板，不用 JSON 载荷：
   轻量档只用默认翻译模板；标准档在有场景（非自动）、英语风格（按 `usesEnglishStyle`，非自然）或
   不同于源文的输入框全文时改用官方「【背景信息】」模板，全文只取最后 1000 个字符，三者都没有时

@@ -1,3 +1,5 @@
+// 只用于 macOS 的界面绘制与按键；iOS 版不编译这一份。
+#if canImport(AppKit)
 import AppKit
 
 /// 光标旁面板的候选行：量宽和绘制。输入法面板（`KeyiCandidateContentView`）和 KEYI 可译设置里磨砂滑块旁的
@@ -243,3 +245,4 @@ public enum KEYICandidateRow {
         return String(characters[0..<max(count, 1)]) + "…"
     }
 }
+#endif

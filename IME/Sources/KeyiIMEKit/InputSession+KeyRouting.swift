@@ -1,7 +1,7 @@
 import InputMethodKit
 import KeyiIMETranslation
 
-/// 按键分流（自动翻译）：IMK 各个按键入口都走这里，有拼音交给 Rime，没拼音先给自动翻译控制器；单按 Shift、组合键离场。
+/// 按键分流（自动翻译）：IMK 各个按键入口都走这里，有拼音交给 Rime，没拼音先给自动翻译控制器（空格、Esc 保留中文）；组合键离场。
 extension InputSession {
     /// Every IMK key entry point (`handle`, both `inputText` callbacks and `command`)
     /// goes through here, so a key is routed identically whichever way the host
@@ -23,7 +23,6 @@ extension InputSession {
         process: () -> Bool
     ) -> Bool {
         settleDictationBeforeKey()
-        shiftTap.cancel()
         syncTranslationClient(client)
         // A composition belongs to the client it started in. A key from another
         // client (no activation callback in between) first settles the owner's whole
@@ -33,6 +32,13 @@ extension InputSession {
         defer { keyDepth -= 1 }
         automaticTranslation.beginUserInput()
         let chord = KeyiRimeKeyMapper.shouldPassThrough(flags)
+        // 不带前缀的网址：按完还在打拼音（打后缀、在候选上挪）、或是打拼音时的退格，都接着记下的几段；
+        // 拼音结束了（选了字、回车、Esc、组合键…）就从头再记（InputSession+BareDomain）。
+        keepsDomainLabels = false
+        let backspaceInPinyin = !chord && rimeKey == KeyiRimeKeyMapper.backspace && !currentPreedit.isEmpty
+        defer {
+            if !keepsDomainLabels, currentPreedit.isEmpty, !backspaceInPinyin { domainLabels = [] }
+        }
         var handled = false
         let kind = automaticOverride
             ?? (releasesToApplication
@@ -70,6 +76,15 @@ extension InputSession {
             handled = true
         } else {
             handled = process()
+        }
+        if !handled {
+            // 交给应用的键：标点前面是什么（InputSession+Punctuation）跟着它变。
+            noteKeyLeftToApplication(
+                rimeKey: rimeKey,
+                characters: characters,
+                chord: leavesForApplication,
+                client: client
+            )
         }
         automaticTranslation.finishUserInput(pinyin: currentPreedit)
         // The marked text (held sentences + pinyin) and the candidate window are drawn
@@ -118,97 +133,13 @@ extension InputSession {
         automaticTranslation.commitHeldForLeaving()
     }
 
-    /// 单按 Shift（按下又松开，中间没有别的键、修饰键或鼠标点击）：有暂存且没在打拼音时，
-    /// 和 Esc 一样把中文原样上屏。事件本身照常交给应用。
+    /// 修饰键事件只给按住说话键（语音输入）用，从不吞掉、也不交给 Rime。单按 Shift 不再保留中文
+    /// （用户 2026-11-23 改成空格），Shift 只管大写。
     func handleFlagsChanged(_ event: NSEvent, client sender: Any?) {
-        // 按住右 ⌥ 说话（语音输入）；Shift 单按的判定照常看同一个事件。
         handleDictationFlags(event, client: sender)
-        let now = ProcessInfo.processInfo.systemUptime
-        let tapped = shiftTap.flagsChanged(
-            keyCode: event.keyCode,
-            flags: event.modifierFlags.intersection(.deviceIndependentFlagsMask),
-            now: now
-        ) { self.secondsSinceMouseDown(now: now) }
-        if event.keyCode == KeyiShiftTap.leftShift || event.keyCode == KeyiShiftTap.rightShift {
-            // Modifier evidence only (no characters): which host sent which Shift edge,
-            // so a host where the tap never completes can be told apart from one that
-            // never delivers flagsChanged at all.
-            let host = (sender as? any IMKTextInput)?.bundleIdentifier() ?? "?"
-            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask).rawValue
-            Self.logger.notice(
-                "shift flags key=\(event.keyCode, privacy: .public) flags=\(flags, privacy: .public) tapped=\(tapped, privacy: .public) host=\(host, privacy: .public)"
-            )
-        }
-        guard tapped, rimeSession.ready else { return }
-        // A modifier-only event may arrive with a different client proxy than the
-        // letters did, so it acts on the field that owns the composition (or the held
-        // text). Comparing the sender's identity would make the tap silently do nothing,
-        // or look like a field switch.
-        let sent = resolvedClient(for: sender)
-        let owner = compositionClient ?? translationSurfaceClient
-        Self.logger.notice(
-            "shift tap pinyin=\(!self.currentPreedit.isEmpty, privacy: .public) holding=\(self.automaticTranslation.isHolding, privacy: .public) owner=\(owner != nil, privacy: .public) sameSender=\(self.isSameClient(owner, sent), privacy: .public)"
-        )
-        guard let client = owner ?? sent else { return }
-        if currentPreedit.isEmpty {
-            guard automaticTranslation.isHolding else { return }
-            _ = routeKey(
-                client: client,
-                keyCode: event.keyCode,
-                rimeKey: nil,
-                flags: [],
-                automaticOverride: .escape
-            ) { false }
-            return
-        }
-        // Pinyin is being typed: the tap turns it into Chinese (the highlighted
-        // candidate) and commits it with everything held, untranslated. With
-        // automatic translation off Shift stays an ordinary modifier.
-        guard isAutomaticTranslationEnabled, compositionClient != nil else { return }
-        // `.escape` keeps routeKey off the chord path (which would commit the
-        // pinyin as letters); the closure does the work inside the key scope.
-        _ = routeKey(
-            client: client,
-            keyCode: event.keyCode,
-            rimeKey: nil,
-            flags: [],
-            automaticOverride: .escape
-        ) {
-            commitPinyinAndHeldAsChinese(client: client)
-            return true
-        }
     }
 
-    /// Shift tap during pinyin: confirms the highlighted candidate (again while Rime
-    /// leaves pinyin unconverted), then commits all held Chinese as it is. When Rime
-    /// can select no further (`nihaov`: 你好 selected, `v` left), the rest is committed
-    /// the way Rime shows it, so the selected Chinese stays and only the leftover
-    /// letters go in as typed. The raw input would lose the selected Chinese.
-    private func commitPinyinAndHeldAsChinese(client: any IMKTextInput) {
-        var rounds = 0
-        while !currentPreedit.isEmpty, rounds < 16 {
-            rounds += 1
-            let before = currentPreedit
-            let result = currentCandidates.indices.contains(highlightedIndex)
-                ? selectVisible(displayIndex: highlightedIndex, client: client)
-                : rimeSession.selectHighlightedCandidate()
-            guard result.handled else { break }
-            _ = apply(result, client: client)
-            if currentPreedit == before { break }
-        }
-        if !currentPreedit.isEmpty {
-            let result = rimeSession.commitComposition()
-            if result.handled, result.commitText?.isEmpty == false {
-                _ = apply(result, client: client)
-            }
-            if !currentPreedit.isEmpty {
-                commitRawInput(client: client, joiningHeldSentence: true)
-            }
-        }
-        automaticTranslation.commitHeldAsChinese()
-    }
-
-    private func secondsSinceMouseDown(now: TimeInterval) -> TimeInterval {
+    func secondsSinceMouseDown(now: TimeInterval) -> TimeInterval {
         if diagnosticMouseOverride {
             return diagnosticMouseDownAt.map { now - $0 } ?? .infinity
         }

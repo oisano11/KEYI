@@ -81,19 +81,41 @@ public final class InputSession: NSObject {
     var diagnosticSecureInput: Bool?
     var diagnosticAutomaticOverride: Bool?
     /// Diagnostics-only: when set, mouse-down times come from `mouse:down` commands
-    /// instead of the system, so the Shift-tap checks do not depend on the machine.
+    /// instead of the system, so the click checks do not depend on the machine.
     var diagnosticMouseOverride = false
     var diagnosticMouseDownAt: TimeInterval?
-    /// 单按 Shift 保留中文。
-    var shiftTap = KeyiShiftTap()
     /// 标记文本里我们最近一次画出的暂存句子。与控制器此刻的暂存文字不一致时，按键结束会重画。
     var drawnHeldText = ""
     /// 控制器在本次按键里改了上屏或暂存文字，按键结束时重画标记文本。
     var needsRedraw = false
 
-    // MARK: - 语音输入（按住右 ⌥ 说话，见 InputSession+Dictation）
+    // MARK: - 英文后面的标点（见 InputSession+Punctuation）
+
+    /// 本会话最近写进 `typedTailClient` 的文字（输入法上屏的，加上交给应用直接打出的字母、
+    /// 数字），只留最后几十个字；读不回输入框的宿主（终端）靠它看标点前面是不是英文。
+    var typedTail = ""
+    weak var typedTailClient: (any IMKTextInput)?
+    /// `typedTail` 最后一次变的时间（systemUptime）；之后点过鼠标就不再可信。
+    var typedTailAt: TimeInterval = 0
+
+    // MARK: - 不带前缀的网址（见 InputSession+BareDomain）
+
+    /// 打拼音时按 . 转出来的几段（`baidu.` → `百度。`），接着打到常见后缀时候选里多一项整段网址。
+    var domainLabels: [KeyiDomainLabel] = []
+    weak var domainLabelsClient: (any IMKTextInput)?
+    var domainLabelsAt: TimeInterval = 0
+    /// 这一下按键记下了新的一段（按键结束时不清 `domainLabels`）。
+    var keepsDomainLabels = false
+    /// 这一下按键里直接上屏的文字（看「标签.」转出了什么）；不记时为 nil。
+    var keyCommitLog: String?
+    /// 网址里已经上屏的开头（`github.` 先上屏了，Rime 的输入是 `github.com`）：标记文字和上屏都去掉它。
+    var addressShownPrefix = ""
+
+    // MARK: - 语音输入（按住说话键说话，见 InputSession+Dictation）
 
     var dictationPhase = KeyiDictationPhase.idle
+    /// 说话键是组合键或功能键时，它的主键此刻按着（按下到松开之间）：期间的重复按下和松开都归输入法。
+    var dictationKeyIsDown = false
     var dictationEngine: KeyiDictationEngine?
     /// 识别中、已经露出来的文字，画在暂存段后面；定稿或取消后清空。
     var dictationLiveText = ""
@@ -228,6 +250,7 @@ public final class InputSession: NSObject {
             Self.logger.debug("Activation without a text client")
             return
         }
+        KeyiDictationKey.reload()
         // 录音中换了输入框：停止录音，说的话丢弃。
         if isDictating, !isSameClient(dictationClient, client) {
             abandonDictation()
@@ -270,7 +293,6 @@ public final class InputSession: NSObject {
             Self.logger.debug("Ignoring re-entrant deactivation")
             return
         }
-        shiftTap.cancel()
         abandonDictation()
         settleHeldForLeaving()
         if let client = resolvedClient(for: sender) {
@@ -287,6 +309,8 @@ public final class InputSession: NSObject {
         }
         // 会话结束：清除认领，任何在途结果都必须失效。
         syncTranslationClient(nil)
+        // 离开输入框：回来时光标和文字可能变了，标点前面是什么要重新看。
+        forgetTyped()
         KeyiHotKeyManager.shared.sessionDidDeactivate(self)
         Self.logger.debug("Input session deactivated")
     }
@@ -305,9 +329,14 @@ public final class InputSession: NSObject {
 
     @objc(keyiRecognizedEventsForClient:)
     func recognizedEvents(client _: Any?) -> UInt {
-        // flagsChanged only for the Shift tap and holding right Option to talk; it is
-        // never consumed or sent to Rime.
-        UInt(NSEvent.EventTypeMask.keyDown.rawValue | NSEvent.EventTypeMask.flagsChanged.rawValue)
+        // flagsChanged only for holding a modifier voice key; it is
+        // never consumed or sent to Rime. keyUp only when the voice key is a key
+        // combination or a function key (its release ends the recording); every other
+        // keyUp goes straight back to the application.
+        KeyiDictationKey.reload()
+        var mask: NSEvent.EventTypeMask = [.keyDown, .flagsChanged]
+        if !KeyiDictationKey.current.isModifierKey { mask.insert(.keyUp) }
+        return UInt(mask.rawValue)
     }
 
     @objc(keyiHandleEvent:client:)
@@ -315,6 +344,10 @@ public final class InputSession: NSObject {
         if let event, event.type == .flagsChanged {
             handleFlagsChanged(event, client: sender)
             return false
+        }
+        // 说话键是组合键或功能键：按下、重复和松开都归输入法，不进拼音也不交给应用。
+        if let event, handleDictationKeyEvent(event, client: sender) {
+            return true
         }
         guard rimeSession.ready,
               let event,

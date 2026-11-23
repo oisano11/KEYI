@@ -77,6 +77,12 @@ final class AppModel: ObservableObject {
     @Published private(set) var installedLocalModels: Set<LocalTranslationModelTier>
     @Published private(set) var localModelDownloadProgress: [LocalTranslationModelTier: Int64] = [:]
     @Published private(set) var localModelDownloadErrors: [LocalTranslationModelTier: String] = [:]
+    /// 正在从哪个节点下（节点名）；下载中而没有这一项时是在给各节点测速。
+    @Published private(set) var localModelDownloadSources: [LocalTranslationModelTier: String] = [:]
+    /// 「下载节点」：auto、内置节点的 id 或 custom（`LocalModelDownloadNodes`）。
+    @Published private(set) var localModelDownloadNode: String
+    /// 自建节点的地址（https，模型文件名接在后面）。
+    @Published private(set) var localModelDownloadCustomURL: String
     @Published private(set) var localModelServerState: LocalModelServer.State = .stopped
     @Published private(set) var showsLocalModelMigrationNotice: Bool
     @Published private(set) var systemTranslationHostRequestID: UUID?
@@ -146,6 +152,8 @@ final class AppModel: ObservableObject {
         self.localModelStorage = localModelStorage
         self.localModelServer = localModelServer ?? .shared
         self.localModelTier = settings.localModelTier()
+        self.localModelDownloadNode = settings.localModelDownloadNode()
+        self.localModelDownloadCustomURL = settings.localModelDownloadCustomURL()
         self.installedLocalModels = Set(
             LocalTranslationModelCatalog.models.filter(localModelStorage.isInstalled).map(\.tier)
         )
@@ -427,11 +435,29 @@ final class AppModel: ObservableObject {
         downloadLocalModel(tier)
     }
 
+    /// 这次点「下载」按什么顺序试节点：自动先测速；指定的（或自建节点）先用，不行再给其余的测速接着下。
+    var localModelDownloadPlan: LocalModelDownloadPlan {
+        LocalModelDownloadNodes.plan(choice: localModelDownloadNode, customURL: localModelDownloadCustomURL)
+    }
+
+    /// 「下载节点」当场生效：下次点「下载」就按它（不影响正在下的）。
+    func selectLocalModelDownloadNode(_ choice: String) {
+        settings.selectLocalModelDownloadNode(choice)
+        localModelDownloadNode = settings.localModelDownloadNode()
+    }
+
+    func setLocalModelDownloadCustomURL(_ text: String) {
+        settings.setLocalModelDownloadCustomURL(text)
+        localModelDownloadCustomURL = settings.localModelDownloadCustomURL()
+    }
+
     func downloadLocalModel(_ tier: LocalTranslationModelTier) {
         guard localModelDownloadTasks[tier] == nil else { return }
         let model = LocalTranslationModelCatalog.model(for: tier)
         let downloader = LocalModelDownloader(storage: localModelStorage)
+        let plan = localModelDownloadPlan
         localModelDownloadErrors[tier] = nil
+        localModelDownloadSources[tier] = nil
         localModelDownloadProgress[tier] = localModelStorage.partialSize(for: model)
         let report: @Sendable (Int64) -> Void = { [weak self] bytes in
             let owner = self
@@ -440,9 +466,17 @@ final class AppModel: ObservableObject {
                 owner.localModelDownloadProgress[tier] = bytes
             }
         }
+        let strings = self.strings
+        let events: @Sendable (LocalModelDownloadEvent) -> Void = { [weak self] event in
+            let owner = self
+            Task { @MainActor in
+                guard let owner, owner.localModelDownloadTasks[tier] != nil else { return }
+                owner.recordLocalModelDownload(event, model: model, strings: strings)
+            }
+        }
         localModelDownloadTasks[tier] = Task { [weak self] in
             do {
-                try await downloader.download(model, progress: report)
+                try await downloader.download(model, plan: plan, events: events, progress: report)
                 self?.finishLocalModelDownload(tier, error: nil)
             } catch {
                 self?.finishLocalModelDownload(tier, error: error)
@@ -473,9 +507,29 @@ final class AppModel: ObservableObject {
         showsLocalModelMigrationNotice = false
     }
 
+    /// 测速中 / 来自哪个节点给界面；测速结果、选了哪个节点、换节点的原因写进系统日志
+    /// （子系统 com.keyi.input-translator，类别 LocalModel；只有节点名、速度和原因，没有任何输入的文字）。
+    private func recordLocalModelDownload(
+        _ event: LocalModelDownloadEvent,
+        model: LocalTranslationModel,
+        strings: InterfaceStrings
+    ) {
+        switch event {
+        case .probing:
+            localModelDownloadSources[model.tier] = nil
+        case .downloading(let node):
+            localModelDownloadSources[model.tier] = strings.localModelNodeName(node)
+        case .note(let text):
+            localModelLogger.info("「\(model.displayName, privacy: .public)」\(text, privacy: .public)")
+        }
+    }
+
+    private let localModelLogger = Logger(subsystem: "com.keyi.input-translator", category: "LocalModel")
+
     private func finishLocalModelDownload(_ tier: LocalTranslationModelTier, error: Error?) {
         localModelDownloadTasks[tier] = nil
         localModelDownloadProgress[tier] = nil
+        localModelDownloadSources[tier] = nil
         if let error, !(error is CancellationError) {
             localModelDownloadErrors[tier] = error.localizedDescription
         }

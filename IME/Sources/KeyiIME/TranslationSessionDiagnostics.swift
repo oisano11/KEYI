@@ -46,8 +46,235 @@ func runTranslationSessionDiagnostics() -> Never {
     // group depend on the state of the machine running it.
     expect(KeyiSessionDiagnostics.fakeTranslation("secure:0", in: session) == "ok", "translation: secure input is pinned off for the checks")
 
-    // (1) Space confirms: the Chinese stays as marked text and is not committed.
+    // (P) 英文后面的标点按英文（半角）出，中文后面照旧是中文标点（用户 2026-11-08）。
+    func client(_ text: String, readable: Bool = true) -> KeyiDiagnosticTextClient {
+        let client = KeyiDiagnosticTextClient(documentText: text)
+        client.refusesTextReads = !readable
+        KeyiSessionDiagnostics.activate(session, client: client)
+        return client
+    }
+    // 第一个汉字之前的英文直接上屏：拼音直接接标点、回车上屏字母、空格选英文候选，之后的标点都是英文的。
     var c = fresh()
+    type("hello", c)
+    type(",", c)
+    expect(c.committedText == "hello," && c.markedText.isEmpty, "punctuation 1: hello then , gives hello, (got \(c.committedText))")
+    c = fresh()
+    type("model", c)
+    key(36, "\r", c)
+    type(",", c)
+    expect(c.committedText == "model,", "punctuation 1: Enter-committed letters then , gives model, (got \(c.committedText))")
+    c = fresh()
+    type("hello", c)
+    key(49, " ", c)
+    type("?", c)
+    expect(c.committedText == "hello?", "punctuation 1: an English candidate then ? gives ? (got \(c.committedText))")
+    // 输入框里原有的英文（读得回来的宿主）。
+    c = client("Hello there")
+    type(",", c)
+    expect(c.committedText == "Hello there,", "punctuation 2: after English already in the field , is English (got \(c.committedText))")
+    c = client("Hello.")
+    type("\"", c)
+    expect(c.committedText == "Hello.\"", "punctuation 2: a quote after English. is a plain quote (got \(c.committedText))")
+    c = client("git commit ")
+    type("-", c)
+    expect(c.committedText == "git commit -" && c.markedText.isEmpty, "punctuation 2: - after a space after English goes straight in, no dash menu (got \(c.committedText) marked \(c.markedText))")
+    c = client("Python3")
+    type(",", c)
+    expect(c.committedText == "Python3,", "punctuation 2: digits after English stay English (got \(c.committedText))")
+    // 中文后面、什么都看不出来时照旧是中文标点。
+    c = client("你好")
+    type(",", c)
+    expect(c.committedText == "你好，", "punctuation 3: after Chinese in the field , stays Chinese (got \(c.committedText))")
+    c = client("价格20")
+    type(",", c)
+    expect(c.committedText == "价格20，", "punctuation 3: digits after Chinese stay Chinese (got \(c.committedText))")
+    c = fresh()
+    type(",", c)
+    expect(c.committedText == "，", "punctuation 3: an empty field gives Chinese punctuation (got \(c.committedText))")
+    c = fresh()
+    holdNihao(c)
+    type(",", c)
+    expect(c.markedText == "你好，" && c.committedText.isEmpty, "punctuation 3: after held Chinese , is Chinese and joins the paragraph (got \(c.markedText))")
+    key(53, "\u{1b}", c)
+    // 打拼音直接按标点：按面板上第一个候选转字。women 面板上第一个是 我们（不是英文 women）。
+    c = fresh()
+    type("women", c)
+    type(",", c)
+    expect(c.markedText == "我们，" && c.committedText.isEmpty, "punctuation 3: women then , takes the shown 我们 and a Chinese comma (got \(c.markedText) / \(c.committedText))")
+    key(53, "\u{1b}", c)
+    // 下划线段里：英文后面的标点是英文的，标点照旧并进这段、不触发翻译。
+    c = fresh()
+    holdNihao(c)
+    type("github", c)
+    type(",", c)
+    expect(c.markedText == "你好GitHub," && c.committedText.isEmpty, "punctuation 4: inside the paragraph , after GitHub is English and stays held (got \(c.markedText))")
+    type("haode", c)
+    type(".", c)
+    expect(c.markedText == "你好GitHub,好的。", "punctuation 4: after Chinese again . is Chinese (got \(c.markedText))")
+    key(53, "\u{1b}", c)
+    c = fresh()
+    holdNihao(c)
+    type("hello", c)
+    key(36, "\r", c)
+    type("?", c)
+    expect(c.markedText == "你好hello?" && c.committedText.isEmpty, "punctuation 4: Enter-committed letters then ? inside the paragraph (got \(c.markedText))")
+    key(36, "\r", c)
+    pump()
+    expect(c.committedText == "EN(你好hello?)", "punctuation 4: the paragraph with English punctuation is translated once (got \(c.committedText))")
+    // 译文上屏后接着打标点；读不回文字的宿主（终端）靠输入法自己记下的上屏内容。
+    KeyiSessionDiagnostics.fakeTranslation("reply:Good evening", in: session)
+    c = client("", readable: false)
+    type("wanshang", c)
+    key(49, " ", c)
+    key(36, "\r", c)
+    pump()
+    KeyiSessionDiagnostics.fakeTranslation("reply:", in: session)
+    expect(c.committedText == "Good evening", "punctuation 5: setup: the English is committed (got \(c.committedText))")
+    type("!", c)
+    expect(c.committedText == "Good evening!", "punctuation 5: ! after the committed English is English (got \(c.committedText))")
+    c = client("", readable: false)
+    type("hello", c)
+    key(36, "\r", c)
+    type(",", c)
+    expect(c.committedText == "hello,", "punctuation 5: unreadable field: , after Enter-committed letters is English (got \(c.committedText))")
+    // 交给应用直接打出的大写字母（读不回的宿主，替身不会自己打字，只看输入法交出的标点）。
+    c = client("", readable: false)
+    expect(!KeyiSessionDiagnostics.typeText("A", into: session, client: c), "punctuation 5: setup: a capital letter goes to the app")
+    type(",", c)
+    expect(c.committedText == ",", "punctuation 5: , after a capital the app typed is English (got \(c.committedText))")
+    // 光标可能挪了（回车交给应用、点了鼠标）之后，读不回的宿主不知道前面是什么，照旧是中文标点。
+    c = client("", readable: false)
+    type("hello", c)
+    key(36, "\r", c)
+    expect(!key(36, "\r", c), "punctuation 6: setup: the next Enter goes to the app")
+    type(",", c)
+    expect(c.committedText == "hello，", "punctuation 6: after Enter went to the app the context is unknown: Chinese (got \(c.committedText))")
+    c = client("", readable: false)
+    type("hello", c)
+    key(36, "\r", c)
+    KeyiSessionDiagnostics.fakeTranslation("mouse:down", in: session)
+    pump(0.05)
+    type(",", c)
+    expect(c.committedText == "hello，", "punctuation 6: after a mouse click the context is unknown: Chinese (got \(c.committedText))")
+    c = client("", readable: false)
+    type("hello", c)
+    key(36, "\r", c)
+    key(51, "\u{7f}", c)
+    type(".", c)
+    expect(c.committedText == "hello.", "punctuation 6: Backspace passed to the app keeps the English before it (got \(c.committedText))")
+    // 输入框读得回来时，点过鼠标后按光标前的文字判断。
+    c = client("你好")
+    KeyiSessionDiagnostics.fakeTranslation("mouse:down", in: session)
+    pump(0.05)
+    type(",", c)
+    expect(c.committedText == "你好，", "punctuation 6: readable field after a click: Chinese before the caret gives Chinese (got \(c.committedText))")
+
+    // (P7) 网址和邮箱（用户 2026-11-11）：www.、https:、字母@ 之后整段照打的样子留在输入里，
+    // 标点前的字母不转汉字；空格、回车都按打的样子上屏，有暂存段时并进去。
+    c = fresh()
+    type("www.baidu.com", c)
+    expect(c.markedText == "www.baidu.com" && c.committedText.isEmpty, "punctuation 7: www.baidu.com stays as typed, not 万维网。百度。 (got \(c.markedText) / \(c.committedText))")
+    expect(KeyiSessionDiagnostics.visibleCandidates(session).isEmpty, "punctuation 7: a web address shows no candidates")
+    key(49, " ", c)
+    expect(c.committedText == "www.baidu.com" && c.markedText.isEmpty, "punctuation 7: space commits the address as typed (got \(c.committedText))")
+    c = fresh()
+    type("https://x.com/a?b=1&c=2#d", c)
+    key(36, "\r", c)
+    expect(c.committedText == "https://x.com/a?b=1&c=2#d", "punctuation 7: digits, = - & # / ? stay in an https address (got \(c.committedText))")
+    c = fresh()
+    type("www.site123.com", c)
+    expect(c.markedText == "www.site123.com", "punctuation 7: digits in an address do not pick candidates (got \(c.markedText))")
+    key(53, "\u{1b}", c)
+    c = fresh()
+    type("oisano@icloud.com", c)
+    key(49, " ", c)
+    expect(c.committedText == "oisano@icloud.com", "punctuation 7: letters then @ is an email, as typed, not 哦isano@iCloud (got \(c.committedText))")
+    c = fresh()
+    holdNihao(c)
+    type("www.baidu.com", c)
+    key(49, " ", c)
+    expect(c.markedText == "你好www.baidu.com" && c.committedText.isEmpty, "punctuation 7: an address after held Chinese joins the paragraph (got \(c.markedText))")
+    key(53, "\u{1b}", c)
+    c = fresh()
+    type("www.ab", c)
+    key(51, "\u{8}", c); key(51, "\u{8}", c); key(51, "\u{8}", c)
+    expect(c.markedText == "www" && KeyiSessionDiagnostics.visibleCandidates(session).first == "万维网", "punctuation 7: deleting back to www gives pinyin candidates again (got \(c.markedText))")
+    key(53, "\u{1b}", c)
+
+    // (P8) 不带前缀的网址（用户 2026-11-11「把 baidu.com 这种不带前缀的也修好」）：按 . 照旧先转字，
+    // 接着打到常见后缀时候选里多一项整段网址；选它就把转出来的字改回照打的样子，后面的路径照打。
+    func domain(_ text: String, held: Bool = false) -> KeyiDiagnosticTextClient {
+        let c = fresh()
+        if held { holdNihao(c) }
+        type(text, c)
+        return c
+    }
+    c = domain("baidu.com")
+    expect(KeyiSessionDiagnostics.visibleCandidates(session).first == "baidu.com", "punctuation 8: baidu.com offers the address first (got \(KeyiSessionDiagnostics.visibleCandidates(session)))")
+    expect(c.markedText == "baidu.com", "punctuation 8: with the address highlighted the field already shows baidu.com (got \(c.markedText))")
+    key(125, "", c)
+    expect(c.markedText == "百度。com", "punctuation 8: moving to a Chinese candidate shows 百度。 and the pinyin again (got \(c.markedText))")
+    key(126, "", c)
+    key(49, " ", c)
+    expect(c.committedText == "baidu.com" && c.markedText.isEmpty, "punctuation 8: space commits baidu.com as typed (got \(c.committedText) / \(c.markedText))")
+    c = domain("baidu.com", held: true)
+    key(36, "\r", c)
+    expect(c.markedText == "你好baidu.com" && c.committedText.isEmpty, "punctuation 8: Enter after held Chinese: 百度。 is replaced inside the paragraph (got \(c.markedText))")
+    key(53, "\u{1b}", c)
+    // 用户 11-11 截图：英文 mail. 在暂存段里，后面 sina 转成了「是那。」——整段 mail.sina.com 都要接上。
+    c = domain("mail.sina.com", held: true)
+    expect(KeyiSessionDiagnostics.visibleCandidates(session).first == "mail.sina.com", "punctuation 8: mail. before sina. stays part of the address (got \(KeyiSessionDiagnostics.visibleCandidates(session)))")
+    expect(c.markedText == "你好mail.sina.com", "punctuation 8: the paragraph shows mail.sina.com, not 是那。com (got \(c.markedText))")
+    key(49, " ", c)
+    expect(c.markedText == "你好mail.sina.com", "punctuation 8: space keeps mail.sina.com (got \(c.markedText))")
+    key(53, "\u{1b}", c)
+    c = domain("github.com/oisano11")
+    key(49, " ", c)
+    expect(c.committedText == "GitHub.com/oisano11", "punctuation 8: English already committed stays, the path is typed as is (got \(c.committedText))")
+    c = domain("news.sina.com.cn")
+    key(49, " ", c)
+    expect(c.committedText == "news.sina.com.cn", "punctuation 8: several labels and . after the suffix (got \(c.committedText))")
+    c = domain("baidu.com,")
+    expect(c.committedText == "baidu.com,", "punctuation 8: other punctuation commits the address, then English punctuation (got \(c.committedText))")
+    c = domain("claude.ai", held: true)
+    key(49, " ", c)
+    expect(c.markedText == "你好claude.ai", "punctuation 8: claude.ai (got \(c.markedText))")
+    key(53, "\u{1b}", c)
+    // 整段都能拼成拼音时网址排第二，空格照旧出中文；普通的中文句号不受影响。
+    c = domain("woaini.ai")
+    expect(Array(KeyiSessionDiagnostics.visibleCandidates(session).prefix(2)) == ["爱", "woaini.ai"], "punctuation 8: all-pinyin woaini.ai puts the address second (got \(KeyiSessionDiagnostics.visibleCandidates(session)))")
+    key(49, " ", c)
+    expect(c.markedText == "我爱你。爱", "punctuation 8: space still gives 我爱你。爱 (got \(c.markedText))")
+    key(53, "\u{1b}", c)
+    c = domain("haode.wozoule")
+    key(49, " ", c)
+    expect(c.markedText == "好的。我走了", "punctuation 8: haode.wozoule is still 好的。我走了 (got \(c.markedText))")
+    key(53, "\u{1b}", c)
+    // 第二项是什么跟着词表变（com 有英文联想 come），按此刻面板上的第二项核对。
+    c = domain("zhihu.com")
+    let zhihuPage = KeyiSessionDiagnostics.visibleCandidates(session)
+    type("2", c)
+    expect(zhihuPage.first == "zhihu.com" && zhihuPage.count > 1 && c.markedText == "知乎。" + zhihuPage[1],
+           "punctuation 8: a digit still picks the shown candidate (got \(c.markedText), page \(zhihuPage))")
+    key(53, "\u{1b}", c)
+    // 中间按了别的键（这里是空格选字）就不再接：. 之后的不算网址。
+    c = domain("baidu")
+    key(49, " ", c)
+    type(".com", c)
+    expect(!KeyiSessionDiagnostics.visibleCandidates(session).contains("baidu.com"), "punctuation 8: after space picked 百度 there is no address (got \(KeyiSessionDiagnostics.visibleCandidates(session)))")
+    key(53, "\u{1b}", c)
+    // 打后缀时退格再打回来，网址那一项还在；退格删进已经上屏的部分时输入作废。
+    c = domain("github.com")
+    key(51, "\u{8}", c); key(51, "\u{8}", c)
+    type("om", c)
+    expect(KeyiSessionDiagnostics.visibleCandidates(session).first == "GitHub.com", "punctuation 8: deleting and retyping the suffix offers the address again (got \(KeyiSessionDiagnostics.visibleCandidates(session)))")
+    key(53, "\u{1b}", c)
+    c = domain("github.com/")
+    key(51, "\u{8}", c); key(51, "\u{8}", c); key(51, "\u{8}", c); key(51, "\u{8}", c)
+    expect(c.markedText.isEmpty && c.committedText == "GitHub.", "punctuation 8: backspacing the address down to what is committed drops it (got \(c.committedText) / \(c.markedText))")
+
+    // (1) Space confirms: the Chinese stays as marked text and is not committed.
+    c = fresh()
     holdNihao(c)
     expect(c.markedText == "你好" && c.committedText.isEmpty, "translation 1: confirmed Chinese is marked text, nothing committed")
     type("wo", c)
@@ -145,148 +372,78 @@ func runTranslationSessionDiagnostics() -> Never {
     pump()
     expect(c.committedText == "再见", "translation 5: the late preview writes nothing")
 
-    // (10) Tapping Shift (press and release, nothing in between) keeps the Chinese.
+    // (10) Space keeps the Chinese (user 2026-11-23, instead of tapping Shift).
     func tapShift(_ client: KeyiDiagnosticTextClient, _ code: UInt16 = 56) -> (Bool, Bool) {
         let down = KeyiSessionDiagnostics.sendFlags(code, modifiers: .shift, into: session, client: client)
         let up = KeyiSessionDiagnostics.sendFlags(code, modifiers: [], into: session, client: client)
         return (down, up)
     }
-    // A web field may repeat the Shift press while it is held: still one tap.
     c = fresh()
     holdNihao(c)
-    _ = KeyiSessionDiagnostics.sendFlags(56, modifiers: .shift, into: session, client: c)
-    _ = KeyiSessionDiagnostics.sendFlags(56, modifiers: .shift, into: session, client: c)
-    _ = KeyiSessionDiagnostics.sendFlags(56, modifiers: [], into: session, client: c)
-    expect(c.committedText == "你好" && c.markedText.isEmpty,
-           "translation 10: a repeated Shift press before the release is still one tap")
+    expect(c.markedText == "你好" && c.committedText.isEmpty, "translation 10: space during pinyin still selects (held)")
+    expect(key(49, " ", c), "translation 10: space with text held is swallowed")
+    expect(c.committedText == "你好" && c.markedText.isEmpty, "translation 10: space commits the held Chinese")
+    pump(1.8)
+    expect(c.committedText == "你好", "translation 10: the space-committed Chinese is not translated")
+    expect(!key(36, "\r", c), "translation 10: the next Enter goes to the app")
+    // With nothing held, space is an ordinary space again.
+    expect(!key(49, " ", c) && c.committedText == "你好", "translation 10: space with nothing held goes to the app")
+    c = fresh()
+    holdNihao(c)
+    pump(1.8)
+    key(49, " ", c)
+    expect(c.committedText == "你好" && c.markedText.isEmpty, "translation 10: space keeps Chinese even with English ready")
+    // Shift+space counts as space.
+    c = fresh()
+    holdNihao(c)
+    key(49, " ", c, .shift)
+    expect(c.committedText == "你好" && c.markedText.isEmpty, "translation 10: Shift+space keeps the Chinese")
+    // Space after Enter while the English is not out yet keeps the Chinese.
+    // 明天 has not been translated before, so the controller's cache cannot answer it.
+    KeyiSessionDiagnostics.fakeTranslation("hold", in: session)
+    c = fresh()
+    type("mingtian", c)
+    key(49, " ", c)
+    expect(c.markedText == "明天", "translation 10: 明天 is held (got \(c.markedText))")
+    key(36, "\r", c)
+    pump()
+    expect(c.markedText == "明天" && c.committedText.isEmpty, "translation 10: still waiting for English")
+    expect(key(49, " ", c), "translation 10: space while waiting is swallowed")
+    expect(c.committedText == "明天" && c.markedText.isEmpty, "translation 10: space while waiting commits the Chinese")
+    KeyiSessionDiagnostics.fakeTranslation("release", in: session)
+    pump()
+    expect(c.committedText == "明天", "translation 10: the late English is dropped after space")
+    // Space during pinyin selects the candidate into the paragraph; the next space commits.
+    c = fresh()
+    holdNihao(c)
+    type("shijie", c)
+    key(49, " ", c)
+    expect(c.markedText == "你好世界" && c.committedText.isEmpty, "translation 10: space during pinyin joins the candidate (got \(c.markedText))")
+    key(49, " ", c)
+    expect(c.committedText == "你好世界" && c.markedText.isEmpty, "translation 10: the second space commits 你好世界")
+    // Tapping Shift no longer keeps the Chinese: Shift only types capitals.
     c = fresh()
     holdNihao(c)
     let (shiftDown, shiftUp) = tapShift(c)
     expect(!shiftDown && !shiftUp, "translation 10: Shift events are never consumed")
-    expect(c.committedText == "你好" && c.markedText.isEmpty, "translation 10: tapping Shift commits the Chinese")
-    pump()
-    expect(!key(36, "\r", c), "translation 10: the next Enter goes to the app")
-    c = fresh()
-    holdNihao(c)
-    pump(1.8)
-    _ = tapShift(c, 60)
-    expect(c.committedText == "你好" && c.markedText.isEmpty, "translation 10: right Shift keeps Chinese even with English ready")
-    // Shift + letter (a capital) is not a tap.
-    c = fresh()
-    holdNihao(c)
-    KeyiSessionDiagnostics.sendFlags(56, modifiers: .shift, into: session, client: c)
-    key(0, "A", c, .shift)
-    KeyiSessionDiagnostics.sendFlags(56, modifiers: [], into: session, client: c)
-    expect(c.markedText.hasPrefix("你好") && !c.committedText.hasPrefix("你好"), "translation 10: Shift+letter does not commit the Chinese")
-    key(53, "\u{1b}", c)
-    key(53, "\u{1b}", c)
-    // Shift + click is not a tap.
-    c = fresh()
-    holdNihao(c)
-    KeyiSessionDiagnostics.sendFlags(56, modifiers: .shift, into: session, client: c)
-    KeyiSessionDiagnostics.fakeTranslation("mouse:down", in: session)
-    KeyiSessionDiagnostics.sendFlags(56, modifiers: [], into: session, client: c)
-    expect(c.markedText == "你好" && c.committedText.isEmpty, "translation 10: Shift+click does not commit the Chinese")
-    // Shift with another modifier (Shift+⌘) is not a tap.
-    KeyiSessionDiagnostics.sendFlags(56, modifiers: .shift, into: session, client: c)
-    KeyiSessionDiagnostics.sendFlags(55, modifiers: [.shift, .command], into: session, client: c)
-    KeyiSessionDiagnostics.sendFlags(55, modifiers: .shift, into: session, client: c)
-    KeyiSessionDiagnostics.sendFlags(56, modifiers: [], into: session, client: c)
-    expect(c.markedText == "你好" && c.committedText.isEmpty, "translation 10: Shift+⌘ does not commit the Chinese")
-    key(53, "\u{1b}", c)
-    // Shift while pinyin is being typed turns it into Chinese and commits everything.
-    c = fresh()
-    holdNihao(c)
-    type("wo", c)
-    let (pinyinDown, pinyinUp) = tapShift(c)
-    expect(!pinyinDown && !pinyinUp, "translation 10: Shift during pinyin is not consumed")
-    expect(c.committedText.hasPrefix("你好") && c.committedText.count == 3 && c.markedText.isEmpty,
-           "translation 10: Shift during pinyin commits held Chinese + the highlighted candidate (got \(c.committedText))")
-    expect(c.committedText.unicodeScalars.allSatisfy { $0.value >= 0x4E00 },
-           "translation 10: Shift during pinyin commits Chinese, no letters")
-    pump(1.8)
-    expect(c.committedText.count == 3 && c.markedText.isEmpty, "translation 10: nothing is translated afterwards")
-    expect(!key(36, "\r", c), "translation 10: the next Enter after Shift during pinyin goes to the app")
-    // The Shift event may come with a different client proxy than the letters did;
-    // it still acts on the field that owns the pinyin and the held text.
-    c = fresh()
-    holdNihao(c)
-    type("wo", c)
-    let proxy = KeyiDiagnosticTextClient()
-    _ = tapShift(proxy)
-    expect(c.committedText.hasPrefix("你好") && c.committedText.count == 3 && c.markedText.isEmpty
-           && proxy.committedText.isEmpty,
-           "translation 10: Shift from another client proxy still commits the owning field (got \(c.committedText))")
-    c = fresh()
-    holdNihao(c)
-    _ = tapShift(KeyiDiagnosticTextClient())
-    expect(c.committedText == "你好" && c.markedText.isEmpty,
-           "translation 10: Shift from another client proxy keeps the held Chinese")
-    // With nothing held, Shift during pinyin commits the candidate directly.
-    c = fresh()
-    type("nihao", c)
-    _ = tapShift(c)
-    expect(c.committedText == "你好" && c.markedText.isEmpty, "translation 10: Shift during pinyin with nothing held commits the Chinese")
-    pump(1.8)
-    expect(c.committedText == "你好", "translation 10: the Shift-committed Chinese is not translated")
-    // Several syllables that need more than one selection still all become Chinese.
-    c = fresh()
-    type("womenqu", c)
-    _ = tapShift(c)
-    expect(!c.committedText.isEmpty && c.markedText.isEmpty
-           && c.committedText.unicodeScalars.allSatisfy { $0.value >= 0x4E00 },
-           "translation 10: Shift turns all the pinyin into Chinese (got \(c.committedText))")
-    // Letters Rime cannot convert stay as typed; the Chinese already selected stays.
-    c = fresh()
-    type("nihaov", c)
-    _ = tapShift(c)
-    expect(c.committedText == "你好v" && c.markedText.isEmpty,
-           "translation 10: Shift keeps the selected Chinese and the unconvertible letter (got \(c.committedText))")
-    pump(1.8)
-    expect(c.committedText == "你好v", "translation 10: the Shift-committed 你好v is not translated")
-    c = fresh()
-    holdNihao(c)
-    type("nihaov", c)
-    _ = tapShift(c)
-    expect(c.committedText == "你好你好v" && c.markedText.isEmpty,
-           "translation 10: with held Chinese Shift commits 你好你好v (got \(c.committedText))")
-    pump(1.8)
-    expect(c.committedText == "你好你好v", "translation 10: the Shift-committed 你好你好v is not translated")
-    expect(!key(36, "\r", c), "translation 10: the next Enter after 你好你好v goes to the app")
-    // Shift+letter during pinyin is still a capital, not a tap.
-    c = fresh()
-    holdNihao(c)
-    type("wo", c)
-    KeyiSessionDiagnostics.sendFlags(56, modifiers: .shift, into: session, client: c)
-    key(0, "A", c, .shift)
-    KeyiSessionDiagnostics.sendFlags(56, modifiers: [], into: session, client: c)
-    expect(c.committedText.isEmpty && c.markedText.hasPrefix("你好"), "translation 10: Shift+letter during pinyin does not commit")
-    key(53, "\u{1b}", c)
-    key(53, "\u{1b}", c)
-    // With automatic translation off, Shift during pinyin stays an ordinary modifier.
-    expect(KeyiSessionDiagnostics.fakeTranslation("auto:0", in: session) == "ok", "translation 10: automatic translation can be paused")
-    c = fresh()
+    expect(c.markedText == "你好" && c.committedText.isEmpty, "translation 10: tapping Shift keeps the paragraph held")
     type("wo", c)
     _ = tapShift(c)
-    expect(c.committedText.isEmpty && c.markedText == "wo", "translation 10: with translation off Shift during pinyin does nothing")
+    expect(c.committedText.isEmpty && c.markedText.hasPrefix("你好"), "translation 10: tapping Shift during pinyin commits nothing")
     key(53, "\u{1b}", c)
-    expect(KeyiSessionDiagnostics.fakeTranslation("auto:1", in: session) == "ok", "translation 10: automatic translation resumes")
-    // With nothing held, tapping Shift does nothing.
-    c = fresh()
-    _ = tapShift(c)
-    expect(c.committedText.isEmpty && c.markedText.isEmpty, "translation 10: Shift with nothing held does nothing")
+    key(53, "\u{1b}", c)
+    expect(c.committedText == "你好" && c.markedText.isEmpty, "translation 10: Esc still keeps the Chinese")
 
-    // (7) Digits and spaces typed between Chinese join the sentence.
+    // (7) Digits typed between Chinese join the sentence (a space would keep the Chinese).
     c = fresh()
     holdNihao(c)
     type("3", c)
-    key(49, " ", c)
     type("shijie", c)
     key(49, " ", c)
-    expect(c.markedText == "你好3 世界" && c.committedText.isEmpty, "translation 7: digit and space join the held sentence")
+    expect(c.markedText == "你好3世界" && c.committedText.isEmpty, "translation 7: a digit joins the held sentence")
     key(36, "\r", c)
     pump()
-    expect(c.committedText == "EN(你好3 世界)", "translation 7: the whole sentence is translated together")
+    expect(c.committedText == "EN(你好3世界)", "translation 7: the whole sentence is translated together")
 
     // Enter while typing pinyin keeps the letters in the sentence.
     c = fresh()
@@ -608,6 +765,8 @@ func runTranslationSessionDiagnostics() -> Never {
         KeyiSessionDiagnostics.sendFlags(61, modifiers: down ? .option : [], into: session, client: client)
     }
     expect(dictation("install") == "ok", "dictation: fake recognizer installs")
+    // The user's own voice key setting must not change these checks: pin right ⌥.
+    expect(dictation("key:61:0") == "右 ⌥", "dictation: the voice key is pinned to right ⌥ for the checks")
     c = fresh()
     let startsBefore = Int(dictation("starts")) ?? -1
     expect(!rightOption(true, c) && dictation("phase") == "listening",
@@ -757,6 +916,157 @@ func runTranslationSessionDiagnostics() -> Never {
     pump()
     expect(c.markedText.isEmpty && c.committedText.isEmpty && !KeyiSessionDiagnostics.previewPanelVisible(session),
            "dictation 12: hearing nothing writes nothing and the panel goes away")
+
+    // (21) The voice key is the user's own choice (contract 2026-11-08): a single modifier
+    // behaves like right ⌥; a key combination or a function key belongs to the input method.
+    let keyUpMask = UInt(NSEvent.EventTypeMask.keyUp.rawValue)
+    func flags(_ code: UInt16, _ modifiers: NSEvent.ModifierFlags, _ client: KeyiDiagnosticTextClient) {
+        KeyiSessionDiagnostics.sendFlags(code, modifiers: modifiers, into: session, client: client)
+    }
+    @discardableResult
+    func keyUp(_ code: UInt16, _ chars: String, _ client: KeyiDiagnosticTextClient,
+               _ modifiers: NSEvent.ModifierFlags = []) -> Bool {
+        KeyiSessionDiagnostics.sendKey(code, characters: chars, into: session, client: client, modifiers: modifiers, type: .keyUp)
+    }
+    @discardableResult
+    func keyRepeat(_ code: UInt16, _ chars: String, _ client: KeyiDiagnosticTextClient,
+                   _ modifiers: NSEvent.ModifierFlags = []) -> Bool {
+        KeyiSessionDiagnostics.sendKey(code, characters: chars, into: session, client: client, modifiers: modifiers, isARepeat: true)
+    }
+    func starts() -> Int { Int(dictation("starts")) ?? -1 }
+
+    expect(dictation("key:54:0") == "右 ⌘", "voice key 1: right ⌘ can be the voice key")
+    expect((UInt(dictation("events")) ?? 0) & keyUpMask == 0, "voice key 1: a modifier voice key asks for no keyUp events")
+    c = fresh()
+    rightOption(true, c)
+    expect(dictation("phase") == "idle", "voice key 1: right ⌥ no longer records")
+    rightOption(false, c)
+    flags(55, .command, c)
+    expect(dictation("phase") == "idle", "voice key 1: left ⌘ does not record")
+    flags(55, [], c)
+    expect(!KeyiSessionDiagnostics.sendFlags(54, modifiers: .command, into: session, client: c)
+           && dictation("phase") == "listening",
+           "voice key 1: holding right ⌘ records; the press still reaches the app")
+    dictation("say:右边命令键")
+    flags(54, [], c)
+    pump(1)
+    expect(dictation("phase") == "idle" && c.markedText == "右边命令键" && c.committedText.isEmpty,
+           "voice key 1: releasing right ⌘ finishes; the Chinese joins the paragraph")
+    key(53, "\u{1b}", c)
+
+    let ctrlOpt: NSEvent.ModifierFlags = [.control, .option]
+    expect(dictation("key:9:\(ctrlOpt.rawValue):v") == "⌃⌥V", "voice key 2: ⌃⌥V can be the voice key")
+    expect((UInt(dictation("events")) ?? 0) & keyUpMask != 0, "voice key 2: a key combination asks for keyUp events")
+    c = fresh()
+    holdNihao(c)
+    var before = starts()
+    flags(59, .control, c)
+    flags(58, ctrlOpt, c)
+    expect(key(9, "v", c, ctrlOpt) && dictation("phase") == "listening" && starts() == before + 1,
+           "voice key 2: pressing ⌃⌥V starts listening and the key never reaches the app")
+    expect(keyRepeat(9, "v", c, ctrlOpt) && starts() == before + 1 && dictation("phase") == "listening",
+           "voice key 2: repeats while holding are swallowed and stay the same recording")
+    dictation("say:组合键")
+    pump(0.8)
+    expect(c.markedText == "你好组合键" && c.committedText.isEmpty, "voice key 2: live text follows the held Chinese")
+    expect(keyUp(9, "v", c, ctrlOpt), "voice key 2: the release is swallowed too")
+    pump()
+    expect(dictation("phase") == "idle" && c.markedText == "你好组合键" && c.committedText.isEmpty,
+           "voice key 2: releasing V finishes; the speech joins the paragraph")
+    flags(58, .control, c)
+    flags(59, [], c)
+    expect(c.markedText == "你好组合键" && c.committedText.isEmpty,
+           "voice key 2: letting go of the modifiers afterwards changes nothing (no Shift tap, no letters)")
+    pump(1.8)
+    key(36, "\r", c)
+    pump(0.5)
+    expect(c.committedText == "EN(你好组合键)", "voice key 2: Enter puts the English in as usual")
+
+    c = fresh()
+    flags(59, .control, c)
+    flags(58, ctrlOpt, c)
+    key(9, "v", c, ctrlOpt)
+    dictation("say:先松修饰键")
+    flags(58, .control, c)
+    expect(dictation("phase") != "listening", "voice key 3: letting go of ⌥ while V is still down ends the recording")
+    expect(keyRepeat(9, "v", c, .control) && keyUp(9, "v", c, .control),
+           "voice key 3: V repeating and released afterwards is swallowed")
+    flags(59, [], c)
+    pump(1)
+    expect(c.markedText == "先松修饰键" && !c.committedText.contains("v") && !c.markedText.contains("v"),
+           "voice key 3: the speech is kept and no letter v is typed")
+    key(53, "\u{1b}", c)
+
+    c = fresh()
+    flags(59, .control, c)
+    flags(58, ctrlOpt, c)
+    key(9, "v", c, ctrlOpt)
+    dictation("say:不要这个")
+    flags(55, ctrlOpt.union(.command), c)
+    expect(dictation("phase") == "idle", "voice key 4: another modifier while holding ⌃⌥V cancels")
+    flags(55, ctrlOpt, c)
+    keyUp(9, "v", c, ctrlOpt)
+    flags(58, .control, c)
+    flags(59, [], c)
+    pump()
+    expect(!c.markedText.contains("不要这个") && !c.committedText.contains("不要这个"),
+           "voice key 4: the cancelled speech is never written")
+
+    c = fresh()
+    flags(59, .control, c)
+    flags(58, ctrlOpt, c)
+    key(9, "v", c, ctrlOpt)
+    dictation("say:不要")
+    key(0, "a", c, ctrlOpt)
+    expect(dictation("phase") == "idle", "voice key 4: another key while holding ⌃⌥V cancels")
+    keyUp(9, "v", c, ctrlOpt)
+    flags(58, .control, c)
+    flags(59, [], c)
+    pump()
+    expect(!c.markedText.contains("不要") && !c.committedText.contains("不要"),
+           "voice key 4: nothing from the cancelled recording arrives")
+
+    c = fresh()
+    before = starts()
+    expect(!key(9, "v", c, .control) && dictation("phase") == "idle" && starts() == before,
+           "voice key 5: ⌃V without ⌥ is an ordinary chord for the app")
+    type("ni", c)
+    expect(key(9, "v", c, ctrlOpt) && dictation("phase") == "idle" && starts() == before,
+           "voice key 5: no recording while pinyin is being typed (the key still stays out of the app)")
+    keyUp(9, "v", c, ctrlOpt)
+    key(53, "\u{1b}", c)
+
+    // A release that happened in another app never reached us: the next press still starts.
+    c = fresh()
+    key(9, "v", c, ctrlOpt)
+    KeyiSessionDiagnostics.commitComposition(session, client: c)
+    c = fresh()
+    before = starts()
+    expect(key(9, "v", c, ctrlOpt) && dictation("phase") == "listening" && starts() == before + 1,
+           "voice key 6: a press after a lost release starts a new recording")
+    dictation("final:")
+    keyUp(9, "v", c, ctrlOpt)
+    pump()
+
+    expect(dictation("key:96:0") == "F5", "voice key 7: F5 alone can be the voice key")
+    c = fresh()
+    expect(key(96, "\u{F708}", c, .function) && dictation("phase") == "listening",
+           "voice key 7: holding F5 (the system adds Fn) records")
+    dictation("say:OK")
+    expect(keyUp(96, "\u{F708}", c, .function), "voice key 7: releasing F5 is swallowed")
+    pump(0.6)
+    expect(dictation("phase") == "idle" && c.committedText == "OK" && c.markedText.isEmpty,
+           "voice key 7: releasing F5 finishes")
+
+    expect(dictation("key:63:0") == "Fn", "voice key 8: Fn alone can be the voice key")
+    c = fresh()
+    flags(63, .function, c)
+    expect(dictation("phase") == "listening", "voice key 8: holding Fn records")
+    dictation("final:")
+    flags(63, [], c)
+    pump()
+    expect(dictation("phase") == "idle", "voice key 8: releasing Fn finishes")
+    dictation("key:default")
 
     if failures.isEmpty {
         print("TRANSLATION SESSION DIAGNOSTICS PASSED")

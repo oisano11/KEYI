@@ -136,6 +136,67 @@ func checkLimitsSpacingAndCache() {
     expectEqual(key.press(.chord), .passOn, "chord: other ⌘/⌃/⌥ keys commit Chinese and pass on")
 }
 
+/// 输入框开头（应用发完消息清空了输入框）：英文前不补空格，不拿上次上屏的英文去猜。
+/// 2026-11-10 Android 模拟器发现；与 C# 共用库检查组 no space at the start of a cleared field 对照。
+func checkNoSpaceAtStartOfClearedField() {
+    section("no space at the start of a cleared field")
+    let h = Harness()
+    h.confirm("你好")
+    h.press(.enter)
+    h.arrive("Hello")
+    expectEqual(h.press(.enter), .passOn, "start: the next Enter goes to the app (it sends the message)")
+    // 应用发完消息，自己清空了输入框。
+    h.surface.committed = ""
+    h.confirm("再见")
+    h.press(.enter)
+    h.arrive("Goodbye")
+    expectEqual(h.visible, "Goodbye", "start: English at the start of a cleared field gets no leading space")
+
+    let same = Harness()
+    same.confirm("你好")
+    same.press(.enter)
+    same.arrive("Hello")
+    same.confirm("再见")
+    same.press(.enter)
+    same.arrive("Goodbye")
+    expectEqual(same.visible, "Hello Goodbye", "start: a space still goes between translations in the same field")
+
+    // 点别处上屏浮层里的英文，走同一条规则。
+    let leave = Harness()
+    leave.confirm("你好")
+    leave.press(.enter)
+    leave.arrive("Hello")
+    leave.surface.committed = ""
+    leave.confirm("再见")
+    leave.pause()
+    leave.arrive("Goodbye")
+    leave.commitComposition()
+    expectEqual(leave.visible, "Goodbye", "start: leaving a cleared field commits the English without a leading space")
+
+    // 终端一类：标记文字总报在位置 0、又读不回文字，分不清是不是开头，照旧用上次上屏的英文判断。
+    let term = Harness()
+    term.surface.reportsMarkedAtStart = true
+    term.surface.textIsUnreadable = true
+    term.confirm("你好")
+    term.press(.enter)
+    term.arrive("Hello")
+    term.confirm("再见")
+    term.press(.enter)
+    term.arrive("Goodbye")
+    expectEqual(term.committed, "Hello Goodbye", "start: an app that always reports position 0 and reads nothing back keeps the space")
+
+    // 报在 0 但读回的不是我们画的暂存文字（前面其实有字），同样不算开头。
+    let other = Harness()
+    other.surface.reportsMarkedAtStart = true
+    other.confirm("你好")
+    other.press(.enter)
+    other.arrive("Hello")
+    other.confirm("再见")
+    other.press(.enter)
+    other.arrive("Goodbye")
+    expectEqual(other.committed, "Hello Goodbye", "start: position 0 that reads back other text is not the start")
+}
+
 func checkCommandEnterSwallowed() {
     section("⌘↩ / ⌃↩ / ⌥↩")
     // 会话把这些键按 .enter 交给控制器；第一下不交给应用。

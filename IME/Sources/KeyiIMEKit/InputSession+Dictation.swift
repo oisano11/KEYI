@@ -3,18 +3,20 @@ import InputMethodKit
 import KEYITranslationClient
 import KeyiIMETranslation
 
-/// 语音输入的阶段：没在录、按住右 ⌥ 在听、松开后等识别定稿。
+/// 语音输入的阶段：没在录、按住说话键在听、松开后等识别定稿。
 enum KeyiDictationPhase {
     case idle
     case listening
     case finishing
 }
 
-/// 语音输入（契约 2026-11-07）：没在打拼音时按住右 ⌥ 说话，松开定稿。
+/// 语音输入（契约 2026-11-07）：没在打拼音时按住说话键说话，松开定稿。说话键默认右 ⌥，用户可在
+/// KEYI 可译设置里改（契约 2026-11-08，`KeyiDictationKey.current`）：单个修饰键看 flagsChanged、事件照常交给
+/// 应用；组合键或功能键看按下和松开，归输入法（`handleDictationKeyEvent`）。
 ///
 /// 说话时识别中的文字接在暂存段后面画成标记文字（带下划线），一个字一个字流出来（`KeyiDictationReveal`），
 /// 识别改了已露出的字就原地换掉；松开后剩下的字很快露完，定稿的中文和确认的候选
-/// 走同一条路（`takeCommit`），并进这段，之后回车换英文、Shift 保留中文都不变。按住时又按了别的键或
+/// 走同一条路（`takeCommit`），并进这段，之后回车换英文、空格保留中文都不变。按住时又按了别的键或
 /// 别的修饰键就当组合键，丢弃这次；录音中输入框不归我们了也丢弃。
 extension InputSession {
     static let dictationMaximumSeconds: TimeInterval = 120
@@ -24,23 +26,29 @@ extension InputSession {
 
     /// flagsChanged 里语音输入的部分。事件本身照常交给应用（`handle` 从不吞 flagsChanged）。
     func handleDictationFlags(_ event: NSEvent, client sender: Any?) {
-        let held = event.modifierFlags.intersection(KeyiDictationKey.modifiers)
-        if let down = KeyiDictationKey.rightOptionIsDown(keyCode: event.keyCode, rawFlags: event.modifierFlags.rawValue) {
-            // 只记修饰键证据（键码、标志位、阶段、宿主），不记文字：哪个宿主送没送右 ⌥、为什么没开始录。
+        let shortcut = KeyiDictationKey.current
+        let held = event.modifierFlags.intersection(KEYIDictationShortcut.trackedModifiers)
+        guard shortcut.isModifierKey else {
+            handleDictationComboFlags(held: held, shortcut: shortcut)
+            return
+        }
+        if let down = shortcut.modifierKeyIsDown(keyCode: event.keyCode, rawFlags: event.modifierFlags.rawValue) {
+            // 只记修饰键证据（键码、标志位、阶段、宿主），不记文字：哪个宿主送没送说话键、为什么没开始录。
             let host = (sender as? any IMKTextInput)?.bundleIdentifier() ?? "?"
             Self.logger.notice(
-                "right option down=\(down, privacy: .public) flags=\(event.modifierFlags.rawValue, privacy: .public) phase=\(String(describing: self.dictationPhase), privacy: .public) host=\(host, privacy: .public)"
+                "voice key key=\(event.keyCode, privacy: .public) down=\(down, privacy: .public) flags=\(event.modifierFlags.rawValue, privacy: .public) phase=\(String(describing: self.dictationPhase), privacy: .public) host=\(host, privacy: .public)"
             )
+            let alone = held == shortcut.heldModifiersToStart
             if down {
                 switch dictationPhase {
                 case .idle:
-                    if held == .option { beginDictation(sender: sender) }
+                    if alone { beginDictation(sender: sender) }
                 case .listening:
                     // 有的宿主按住修饰键时会重复送按下：还是同一次。
                     break
                 case .finishing:
                     settleDictationNow()
-                    if held == .option { beginDictation(sender: sender) }
+                    if alone { beginDictation(sender: sender) }
                 }
             } else if dictationPhase == .listening {
                 finishDictation()
@@ -48,11 +56,67 @@ extension InputSession {
             return
         }
         guard dictationPhase == .listening else { return }
-        // 按住右 ⌥ 时又动了别的修饰键：当组合键，丢弃这次说的话。
+        // 按住说话键时又动了别的修饰键：当组合键，丢弃这次说的话。
         cancelDictation(reason: "another modifier")
     }
 
-    /// 有键按下（`routeKey` 开头）。按住右 ⌥ 时按的键是组合键：丢弃这次；松开后还在等定稿：
+    /// 说话键是组合键或功能键时的 flagsChanged：按着主键在听时，松开了它要求的修饰键就是说完了；
+    /// 多按了别的修饰键就当别的组合键，丢弃这次。
+    private func handleDictationComboFlags(held: NSEvent.ModifierFlags, shortcut: KEYIDictationShortcut) {
+        guard dictationPhase == .listening, dictationKeyIsDown else { return }
+        let combo = held.intersection(KEYIDictationShortcut.comboModifiers)
+        if !combo.isSuperset(of: shortcut.modifiers) {
+            finishDictation()
+        } else if combo != shortcut.modifiers {
+            cancelDictation(reason: "another modifier")
+        }
+    }
+
+    /// 说话键是组合键或功能键：按下开始、松开结束，按下、自动重复和松开都归输入法（返回 true）。
+    /// 主键按着时松开了修饰键，录音已经结束，之后主键的重复和松开照样吞掉，不打出字母。
+    /// 打拼音时、密码框里按它不录音，也不交给应用。
+    func handleDictationKeyEvent(_ event: NSEvent, client sender: Any?) -> Bool {
+        let shortcut = KeyiDictationKey.current
+        guard !shortcut.isModifierKey, event.keyCode == shortcut.keyCode else { return false }
+        switch event.type {
+        case .keyDown:
+            // 按着不放时系统送来的重复。松开没送到我们（在别的应用里松开）时标记会留着，
+            // 所以只认重复：新的一次按下照常重新判断。
+            if event.isARepeat, dictationKeyIsDown { return true }
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard shortcut.matchesKeyDown(keyCode: event.keyCode, flags: flags) else {
+                dictationKeyIsDown = false
+                return false
+            }
+            dictationKeyIsDown = true
+            let host = (sender as? any IMKTextInput)?.bundleIdentifier() ?? "?"
+            Self.logger.notice(
+                "voice key key=\(event.keyCode, privacy: .public) down=true repeat=\(event.isARepeat, privacy: .public) phase=\(String(describing: self.dictationPhase), privacy: .public) host=\(host, privacy: .public)"
+            )
+            // 进来之前就按着的（只收到重复）不算这次按下。
+            guard !event.isARepeat else { return true }
+            switch dictationPhase {
+            case .idle:
+                beginDictation(sender: sender)
+            case .listening:
+                break
+            case .finishing:
+                settleDictationNow()
+                beginDictation(sender: sender)
+            }
+            return true
+        case .keyUp:
+            guard dictationKeyIsDown else { return false }
+            dictationKeyIsDown = false
+            Self.logger.notice("voice key key=\(event.keyCode, privacy: .public) down=false phase=\(String(describing: self.dictationPhase), privacy: .public)")
+            if dictationPhase == .listening { finishDictation() }
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// 有键按下（`routeKey` 开头）。按住说话键时按的键是组合键：丢弃这次；松开后还在等定稿：
     /// 先把已识别的文字交出去，再处理这个键，说的话不丢。
     func settleDictationBeforeKey() {
         switch dictationPhase {
@@ -271,7 +335,7 @@ extension InputSession {
         }
     }
 
-    /// 「中」行是暂存段 + 识别中的文字，下一行「正在听…」，底栏写松开右 ⌥ 结束和这次用的识别引擎。
+    /// 「中」行是暂存段 + 识别中的文字，下一行「正在听…」，底栏写松开说话键结束和这次用的识别引擎。
     private func showDictationPanel() {
         let source = automaticTranslation.heldText + dictationLiveText
         let engine = dictationEngineInfo

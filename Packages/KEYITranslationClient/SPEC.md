@@ -76,3 +76,10 @@ socket 路径 = `~/Library/Application Support/com.keyi.input-translator/transla
 写在一条串行队列上，关闭也在这条队列上，不会写到复用的 fd。协议里仍然没有密钥：云端用的 Key 只在
 KEYI 可译里。旧版服务看不懂 `transcribe`，回 `badRequest`，输入法当作没配好、用本机识别。
 
+## 说话键（2026-11-08）
+
+`KEYIDictationShortcut`：语音输入按住说话的键，单个修饰键（键码区分左右，Fn 也算）或修饰键（⌃⌥⇧⌘）加一个键 /
+单独的 F1–F20。`problem` 说明不能用的原因，`modifierKeyIsDown` / `matchesKeyDown` 给输入法判断按下松开，
+`displayName` 给设置和面板显示（「右 ⌥」「⌃⌥V」「F5」）。`KEYIDictationShortcutSettings` 存在 KEYI 可译偏好域
+`dictation.shortcut`（键码、修饰键原始值、键上的字），默认右 ⌥ 不存；改了发分布式通知
+`com.keyi.dictation-shortcut.changed`。读到不能用的值按右 ⌥。不走翻译服务的线协议。

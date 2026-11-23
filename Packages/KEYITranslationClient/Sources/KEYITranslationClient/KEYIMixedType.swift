@@ -1,3 +1,5 @@
+// 只用于 macOS 的界面绘制与按键；iOS 版不编译这一份。
+#if canImport(AppKit)
 import AppKit
 import CoreText
 
@@ -69,3 +71,4 @@ private extension CGFloat {
         return (self * factor).rounded() / factor
     }
 }
+#endif

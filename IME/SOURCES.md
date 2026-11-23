@@ -160,6 +160,16 @@ darts-clone 同样不以子模块固定，而是随 OpenCC 的
   SHA-256 `c8648c1dc1ad691c77ef29525244d42482b2e8bcabe08355baec241f563306a2`，GPL-3.0（同第 4 节）。
 - 未引入雾凇英文主词库 `en_dicts/en.dict.yaml`：其主要来源 google-10000-english 的许可只允许
   教育、个人与研究用途，作者不建议未经 LDC 授权商用。也未引入 `cn_en` 中英夹杂词表与 Lua。
+- wordfreq 英文词频（作者 Robyn Speer，2026-11-11 引入，只用来给英文联想排序）：
+  https://github.com/rspeer/wordfreq commit `912caf64b657478d1dff1138efdc078947d54bb1` 的
+  `wordfreq/data/large_en.msgpack.gz`，SHA-256 `dffae8066b78dce0a6667cf5f58e567054f902674667090a7ac8a8a44628b05c`。
+  经 `Scripts/generate-english-hints.py` 生成 `resources/rime/english/hint.dict.yaml`（只从 SCOWL 与 en_ext 的
+  纯字母词里挑每百万词至少出现一次的词，每个两个字母以上的前缀按词频留 2 或 4 个，不加新词），
+  SHA-256 `63fb99985ae6d31249d9bbd7fe7a68a88ad5c92cbd09011d22d5d28faebd794d`。许可：数据 CC BY-SA 4.0，
+  可商用，须署名；含 SUBTLEX（Marc Brysbaert 等，须注明作者并说明是免费数据）、OpenSubtitles、Google Books
+  Ngrams、Wikipedia、ParaCrawl、Leeds Internet Corpus。生成的 `hint.dict.yaml` 同样按 CC BY-SA 4.0 发布，
+  上游署名声明 `NOTICE.md` 原样随包为 `resources/rime/english/LICENSE.wordfreq.md`（SHA-256
+  `d9b104dafe63886af55e7cea7484824e32e12d4e1f57f319923dd643b36d6b15`）。词频文件本身不随包。
 - `resources/rime/keyi_english.schema.yaml`、`keyi_english.dict.yaml` 为 KEYI 自己编写。
 
 ## 5. KEYI 自有内容（Apache-2.0）

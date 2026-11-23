@@ -7,7 +7,9 @@ import PackageDescription
 let package = Package(
     name: "KEYITranslationClient",
     platforms: [
-        .macOS(.v15)
+        .macOS(.v15),
+        // KEYI 拼音 iOS 版（iOS/IME/）的键盘扩展也用这个包。
+        .iOS(.v18)
     ],
     products: [
         .library(name: "KEYITranslationClient", targets: ["KEYITranslationClient"])

@@ -100,8 +100,14 @@ func checkLeavingCommitsReadyEnglish() {
     expectEqual(after.committed, "Hello再见", "leave-j: the old preview does not apply to the next paragraph")
 
     let esc = previewed("你好", "Hello")
-    expectEqual(esc.press(.escape), .consumed, "leave-k: Esc (and the Shift tap) is consumed")
+    expectEqual(esc.press(.escape), .consumed, "leave-k: Esc is consumed")
     expectEqual(esc.committed, "你好", "leave-k: Esc keeps Chinese even with English ready")
+
+    // 空格代替单按 Shift 保留中文（用户 2026-11-23）。
+    let space = previewed("你好", "Hello")
+    expectEqual(space.press(.space), .consumed, "leave-k2: space is consumed while text is held")
+    expectEqual(space.committed, "你好", "leave-k2: space keeps Chinese even with English ready")
+    expectEqual(space.press(.space), .passOn, "leave-k2: the next space (nothing held) goes on as a space")
 
     let chord = previewed("你好", "Hello")
     chord.press(.chord)
